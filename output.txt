@@ -1,0 +1,562 @@
+📂 Your project directory:
+📂 Directory Structure:
+└ 📁 .
+├ 📜 README.md
+├ 📜 driver.go
+├ 📜 go.mod
+├ 📜 output.txt
+└ 📜 preprocessor.go
+
+
+📂 Go Files:
+┣ 📜 driver.go
+```go
+package bingo
+
+import (
+	"errors"
+	"fmt"
+	"github.com/go-playground/validator/v10"
+	jsoniter "github.com/json-iterator/go"
+	"go.etcd.io/bbolt"
+	"os"
+	"strings"
+)
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var AllDocuments = -1
+
+var (
+	ErrDocumentNotFound = fmt.Errorf("document not found")
+	ErrDocumentExists   = fmt.Errorf("document already exists")
+)
+
+type WrappedBucket struct {
+	*bbolt.Bucket
+}
+
+func (b *WrappedBucket) ReverseForEach(fn func(k, v []byte) error) error {
+	if b.Tx().DB() == nil {
+		return fmt.Errorf("tx is closed")
+	}
+	c := b.Cursor()
+	for k, v := c.Last(); k != nil; k, v = c.Prev() {
+		if err := fn(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func IsErrDocumentNotFound(err error) bool {
+	return strings.Contains(err.Error(), ErrDocumentNotFound.Error())
+}
+
+func IsErrDocumentExists(err error) bool {
+	return strings.Contains(err.Error(), ErrDocumentExists.Error())
+}
+
+type DriverConfiguration struct {
+	DeleteNoVerify bool
+	Filename       string
+}
+
+type Driver struct {
+	db     *bbolt.DB
+	val    *validator.Validate
+	config *DriverConfiguration
+}
+
+func NewDriver(config DriverConfiguration) (*Driver, error) {
+	db, err := bbolt.Open(config.Filename, 0600, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &Driver{
+		db:     db,
+		val:    validator.New(validator.WithRequiredStructEnabled()),
+		config: &config,
+	}, nil
+}
+
+func (d *Collection[DocumentType]) Drop() error {
+	if !d.Driver.config.DeleteNoVerify {
+		if r, _ := os.LookupEnv("BINGO_ALLOW_DROP_" + strings.ToUpper(d.Name)); r != "true" {
+			return fmt.Errorf("delete not allowed, set environment variable BINGO_ALLOW_DROP_%s=true to allow", strings.ToUpper(d.Name))
+		}
+	}
+	return d.Driver.db.Update(func(tx *bbolt.Tx) error {
+		return tx.DeleteBucket([]byte(d.Name))
+	})
+}
+
+type CollectionProps struct {
+	Name      string
+	CacheSize int
+}
+
+type DocumentSpec interface {
+	Key() []byte
+}
+
+type HasUpdate interface {
+	Update() error
+}
+
+type Collection[DocumentType DocumentSpec] struct {
+	Driver       *Driver
+	Name         string
+	nameBytes    []byte
+	beforeUpdate func(doc *DocumentType) error
+	afterUpdate  func(doc *DocumentType) error
+	beforeDelete func(doc *DocumentType) error
+	afterDelete  func(doc *DocumentType) error
+	beforeInsert func(doc *DocumentType) error
+	afterInsert  func(doc *DocumentType) error
+}
+
+func (c *Collection[T]) BeforeUpdate(f func(doc *T) error) *Collection[T] {
+	c.beforeUpdate = f
+	return c
+}
+
+func (c *Collection[T]) AfterUpdate(f func(doc *T) error) *Collection[T] {
+	c.afterUpdate = f
+	return c
+}
+
+func (c *Collection[T]) BeforeDelete(f func(doc *T) error) *Collection[T] {
+	c.beforeDelete = f
+	return c
+}
+
+func (c *Collection[T]) AfterDelete(f func(doc *T) error) *Collection[T] {
+	c.afterDelete = f
+	return c
+}
+
+func (c *Collection[T]) BeforeInsert(f func(doc *T) error) *Collection[T] {
+	c.beforeInsert = f
+	return c
+}
+
+func (c *Collection[T]) AfterInsert(f func(doc *T) error) *Collection[T] {
+	c.afterInsert = f
+	return c
+}
+
+func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] {
+	return &Collection[T]{
+		Driver:    driver,
+		Name:      name,
+		nameBytes: []byte(name),
+	}
+}
+
+type InsertResult struct {
+	Success    bool
+	Errors     []error
+	InsertedId []byte
+}
+
+func (ir *InsertResult) Error() error {
+	if len(ir.Errors) == 0 {
+		return nil
+	}
+	var s []string
+	for _, err := range ir.Errors {
+		s = append(s, err.Error())
+	}
+	return fmt.Errorf(strings.Join(s, ": "))
+}
+
+func (ir *InsertResult) fail(errs ...error) {
+	ir.Success = false
+	for _, err := range errs {
+		if err != nil {
+			ir.Errors = append(ir.Errors, err)
+		}
+	}
+}
+
+func (c *Collection[T]) Insert(document T) (ir *InsertResult) {
+	_, err := c.FindById(document.Key())
+	if err != nil && errors.Is(err, ErrDocumentNotFound) {
+		return c.InsertOrUpsert(document)
+	}
+
+	if err != nil && !errors.Is(err, ErrDocumentNotFound) {
+		return &InsertResult{Errors: []error{err}}
+	}
+
+	return &InsertResult{Errors: []error{ErrDocumentExists, fmt.Errorf("key %v already exists", string(document.Key()))}}
+
+}
+
+func (c *Collection[T]) InsertOrUpsert(document T) (ir *InsertResult) {
+	ir = &InsertResult{
+		Success: true,
+	}
+	if err := c.Driver.val.Struct(document); err != nil {
+		ir.fail(err)
+		return
+	}
+
+	if c.beforeInsert != nil {
+		err := c.beforeInsert(&document)
+		if err != nil {
+			ir.fail(err)
+			return
+		}
+	}
+
+	marshal, err := json.Marshal(document)
+	if err != nil {
+		ir.fail(err)
+		return
+	}
+	var idBytes []byte
+	ir.fail(c.Driver.db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists(c.nameBytes)
+		if err != nil {
+			return err
+		}
+
+		key := document.Key()
+		if len(key) == 0 {
+			uniqueId, _ := bucket.NextSequence()
+			idBytes = []byte(fmt.Sprintf("%v", uniqueId))
+		} else {
+			idBytes = key
+		}
+		return bucket.Put(idBytes, marshal)
+	}))
+
+	if c.afterInsert != nil {
+		err := c.afterInsert(&document)
+		if err != nil {
+			ir.fail(err)
+			return
+		}
+	}
+
+	ir.InsertedId = idBytes
+	return
+}
+
+func (c *Collection[T]) FindById(id []byte) (T, error) {
+	var document T
+	err := c.Driver.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
+		}
+		value := bucket.Get(id)
+		if value == nil {
+			return errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
+		}
+		return json.Unmarshal(value, &document)
+	})
+	return document, err
+}
+
+var stoperr = fmt.Errorf("stop")
+
+func (c *Collection[DocumentType]) queryKeys(keys ...string) []DocumentType {
+	var documents []DocumentType
+	_ = c.Driver.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		for _, key := range keys {
+			value := bucket.Get([]byte(key))
+			if value == nil {
+				continue
+			}
+			var document DocumentType
+			err := json.Unmarshal(value, &document)
+			if err != nil {
+				continue
+			}
+			documents = append(documents, document)
+		}
+		return nil
+	})
+	return documents
+}
+
+func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
+	var documents []T
+	var currentFound = 0
+	var last = 0
+	err := c.Driver.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		wbucket := &WrappedBucket{bucket}
+		return wbucket.ReverseForEach(func(k, v []byte) error {
+			last += 1
+			if last <= q.Skip {
+				return nil
+			}
+
+			var document T
+			err := json.Unmarshal(v, &document)
+			if err != nil {
+				return err
+			}
+			if q.Filter(document) {
+				documents = append(documents, document)
+				currentFound += 1
+				if q.Count > 0 && currentFound >= q.Count {
+					return stoperr
+				}
+			}
+			return nil
+		})
+	})
+	if err != nil && !errors.Is(err, stoperr) {
+		return documents, last, err
+	}
+
+	return documents, last, err
+}
+
+type Query[T DocumentSpec] struct {
+	Filter func(doc T) bool
+	Skip   int
+	Count  int
+	Keys   []string
+}
+
+func (c *Collection[T]) Query(q Query[T]) *QueryResult[T] {
+	if q.Keys != nil && q.Filter != nil {
+		panic(fmt.Errorf("cannot use both key and filter"))
+	}
+
+	result := &QueryResult[T]{
+		Collection: c,
+	}
+	if q.Keys != nil {
+		items := c.queryKeys(q.Keys...)
+		for _, item := range items {
+			item := item
+			result.Items = append(result.Items, &item)
+		}
+		return result
+	}
+
+	if q.Filter != nil {
+		items, last, err := c.queryFind(q)
+		if err != nil {
+			result.Error = errors.Join(err, fmt.Errorf("error while querying"))
+		}
+		result.Last = last
+		for _, item := range items {
+			item := item
+			result.Items = append(result.Items, &item)
+		}
+		return result
+	}
+
+	result.Error = fmt.Errorf("no query provided")
+	return result
+}
+
+type QueryResult[T DocumentSpec] struct {
+	Collection *Collection[T]
+	Items      []*T
+	Last       int
+	Error      error
+}
+
+func (qr *QueryResult[T]) JSONResponse() map[string]any {
+	if !qr.Any() {
+		return map[string]any{
+			"result": []any{},
+			"count":  0,
+			"next":   0,
+		}
+	}
+	return map[string]any{
+		"result": qr.Items,
+		"count":  len(qr.Items),
+		"next":   qr.Last,
+	}
+}
+
+func (qr *QueryResult[T]) Count() int {
+	return len(qr.Items)
+}
+
+func (qr *QueryResult[T]) First() *T {
+	if len(qr.Items) == 0 {
+		return new(T)
+	}
+	return qr.Items[0]
+}
+
+func (qr *QueryResult[T]) Any() bool {
+	return len(qr.Items) > 0
+}
+
+func (qr *QueryResult[T]) ForEach(f func(doc *T) error) *QueryResult[T] {
+	if qr.Error != nil {
+		return qr
+	}
+	for _, document := range qr.Items {
+		err := f(document)
+		if err != nil {
+			qr.Error = err
+			return qr
+		}
+	}
+	return qr
+}
+
+func (qr *QueryResult[T]) Filter(f func(doc *T) bool) *QueryResult[T] {
+	if qr.Error != nil {
+		return qr
+	}
+	var items []*T
+	for _, document := range qr.Items {
+		if f(document) {
+			items = append(items, document)
+		}
+	}
+	qr.Items = items
+	return qr
+}
+
+func (qr *QueryResult[T]) Validate(f func(qr *QueryResult[T]) error) *QueryResult[T] {
+	if qr.Error != nil {
+		return qr
+	}
+	err := f(qr)
+	if err != nil {
+		qr.Error = err
+	}
+	return qr
+}
+
+func (qr *QueryResult[T]) Delete() error {
+	if qr.Error != nil {
+		return qr.Error
+	}
+	return qr.Collection.Driver.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(qr.Collection.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", qr.Collection.Name)
+		}
+
+		for _, document := range qr.Items {
+			if qr.Collection.beforeDelete != nil {
+				err := qr.Collection.beforeDelete(document)
+				if err != nil {
+					return err
+				}
+			}
+
+			err := bucket.Delete((*document).Key())
+			if err != nil {
+				return err
+			}
+
+			if qr.Collection.afterDelete != nil {
+				err := qr.Collection.afterDelete(document)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func (qr *QueryResult[T]) Update() error {
+	if qr.Error != nil {
+		return qr.Error
+	}
+	return qr.Collection.Driver.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(qr.Collection.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", qr.Collection.Name)
+		}
+
+		for _, document := range qr.Items {
+			if qr.Collection.beforeUpdate != nil {
+				err := qr.Collection.beforeUpdate(document)
+				if err != nil {
+					return err
+				}
+			}
+
+			data, err := json.Marshal(document)
+			if err != nil {
+				return err
+			}
+
+			err = bucket.Put((*document).Key(), data)
+			if err != nil {
+				return err
+			}
+
+			if qr.Collection.afterUpdate != nil {
+				err := qr.Collection.afterUpdate(document)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+```
+┣ 📜 preprocessor.go
+```go
+package bingo
+
+import (
+	"fmt"
+	"reflect"
+)
+
+type Preprocessor[T any] interface {
+	Name() string
+	To(T) ([]byte, error)
+	From([]byte) (T, error)
+}
+
+type Guard interface {
+	Name() string
+	Check(any) error
+}
+
+type GuardNotNull struct{}
+
+func (g *GuardNotNull) Name() string {
+	return "notnull"
+}
+
+func (g *GuardNotNull) Check(val any) error {
+	if reflect.ValueOf(val).IsNil() {
+		return fmt.Errorf("value is nil")
+	}
+	return nil
+}
+
+type GuardNotEmpty struct{}
+
+func (g *GuardNotEmpty) Name() string {
+	return "notempty"
+}
+
+func (g *GuardNotEmpty) Check(val any) error {
+	if val.(string) == "" {
+		return fmt.Errorf("value is empty")
+	}
+	return nil
+}
+```
