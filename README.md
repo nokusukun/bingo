@@ -219,12 +219,19 @@ if result.Any() {
 ### Pagination
     
 ```go
-result := userCollection.Query(bingo.Query[User]{
+page1 := userCollection.Query(bingo.Query[User]{
     Filter: func(doc User) bool {
         return doc.Active 
     },
     Count: 10, // Get 10 results
-    Skip: 150, // Skip n Users, this value is returned by the previous query as QueryResult.Next
+})
+
+page2 := userCollection.Query(bingo.Query[User]{
+    Filter: func(doc User) bool {
+        return doc.Active 
+    },
+    Count: 10, // Get 10 results
+    Skip: page1.Next, // Skip n Users, this value is returned by the previous query as QueryResult.Next
 })
 ```
 
