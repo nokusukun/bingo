@@ -1,4 +1,4 @@
-# Bingo: A Simple Golang Database Wrapper
+# Bingo: A Generics First Database Wrapper
 
 Bingo is a Golang library that provides a convenient wrapper for the `bbolt` database. 
 
