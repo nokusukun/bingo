@@ -16,7 +16,7 @@ Through the use of generics, it includes capabilities for CRUD operations, valid
 Install the library using `go get`:
 
 ```bash
-go get -u <path_to_bingo_library>
+go get -u github.com/nokusukun/bingodb
 ```
 
 
