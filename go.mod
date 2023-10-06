@@ -1,4 +1,4 @@
-module github.com/nokusukun/bingodb
+module github.com/nokusukun/bingo
 
 go 1.18
 
