@@ -199,6 +199,24 @@ if insertResult.Error() != nil {
 }
 ```
 
+### Updating a Document
+
+```go
+result, err := coll.FindOne(func(doc TestDocument) bool {
+    return doc.Name == "Apple"
+})
+
+if err != nil {
+    t.Fatalf("Failed to find document: %v", err)
+}
+
+result.Name = "Pineapple"
+err = coll.UpdateOne(result)
+if err != nil {
+    t.Fatalf("Failed to update document: %v", err)
+}
+```
+
 ### Querying for Documents
 
 ```go

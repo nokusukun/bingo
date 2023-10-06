@@ -59,12 +59,157 @@ func TestCRUD(t *testing.T) {
 	}
 
 	// Find
-	foundDoc, err := coll.FindById([]byte("1"))
+	foundDoc, err := coll.FindById("1")
 	if err != nil {
 		t.Fatalf("Failed to find document: %v", err)
 	}
 	if foundDoc.Name != "Test" {
 		t.Fatalf("Unexpected document data: %v", foundDoc)
+	}
+}
+
+func TestFindAll(t *testing.T) {
+	config := bingo.DriverConfiguration{
+		Filename:       "testquery.db",
+		DeleteNoVerify: true,
+	}
+	driver, err := bingo.NewDriver(config)
+	if err != nil {
+		t.Fatalf("Failed to initialize driver: %v", err)
+	}
+
+	defer func() {
+		driver.Close()
+		os.Remove("testquery.db")
+	}()
+
+	// Collection
+	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
+
+	docs := []TestDocument{
+		{ID: "1", Name: "Apple"},
+		{ID: "2", Name: "Banana"},
+		{ID: "3", Name: "Cherry"},
+	}
+	for _, doc := range docs {
+		result := coll.Insert(doc)
+		if !result.Success {
+			t.Fatalf("Failed to insert document: %v", result.Error())
+		}
+	}
+
+	result, _ := coll.Find(func(doc TestDocument) bool {
+		return true
+	}, bingo.Skip(1), bingo.Count(1))
+
+	if result[0].Name != "Banana" {
+		t.Fatalf("Unexpected query result: %v", result[0])
+	}
+}
+
+func TestUpdateOne(t *testing.T) {
+	config := bingo.DriverConfiguration{
+		Filename:       "testquery.db",
+		DeleteNoVerify: true,
+	}
+	driver, err := bingo.NewDriver(config)
+	if err != nil {
+		t.Fatalf("Failed to initialize driver: %v", err)
+	}
+
+	defer func() {
+		driver.Close()
+		os.Remove("testquery.db")
+	}()
+
+	// Collection
+	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
+
+	docs := []TestDocument{
+		{ID: "1", Name: "Apple"},
+		{ID: "2", Name: "Banana"},
+		{ID: "3", Name: "Cherry"},
+	}
+	for _, doc := range docs {
+		result := coll.Insert(doc)
+		if !result.Success {
+			t.Fatalf("Failed to insert document: %v", result.Error())
+		}
+	}
+
+	result, err := coll.FindOne(func(doc TestDocument) bool {
+		return doc.Name == "Apple"
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to find document: %v", err)
+	}
+
+	result.Name = "Pineapple"
+	err = coll.UpdateOne(result)
+	if err != nil {
+		t.Fatalf("Failed to update document: %v", err)
+	}
+
+	result, err = coll.FindOne(func(doc TestDocument) bool {
+		return doc.Name == "Pineapple"
+	})
+	if err != nil {
+		t.Fatalf("Failed to find document: %v", err)
+	}
+	if result.Name != "Pineapple" {
+		t.Fatalf("Unexpected query result: %v", result)
+	}
+}
+
+func TestDeleteOne(t *testing.T) {
+	config := bingo.DriverConfiguration{
+		Filename:       "testquery.db",
+		DeleteNoVerify: true,
+	}
+	driver, err := bingo.NewDriver(config)
+	if err != nil {
+		t.Fatalf("Failed to initialize driver: %v", err)
+	}
+
+	defer func() {
+		driver.Close()
+		os.Remove("testquery.db")
+	}()
+
+	// Collection
+	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
+
+	docs := []TestDocument{
+		{ID: "1", Name: "Apple"},
+		{ID: "2", Name: "Banana"},
+		{ID: "3", Name: "Cherry"},
+	}
+	for _, doc := range docs {
+		result := coll.Insert(doc)
+		if !result.Success {
+			t.Fatalf("Failed to insert document: %v", result.Error())
+		}
+	}
+
+	result, err := coll.FindOne(func(doc TestDocument) bool {
+		return doc.Name == "Apple"
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to find document: %v", err)
+	}
+
+	err = coll.DeleteOne(result)
+	if err != nil {
+		t.Fatalf("Failed to delete document: %v", err)
+	}
+
+	_, err = coll.FindOne(func(doc TestDocument) bool {
+		return doc.Name == "Apple"
+	})
+	if err == nil {
+		t.Fatalf("Found document that should have been deleted")
 	}
 }
 
@@ -146,7 +291,7 @@ func TestErrorScenarios(t *testing.T) {
 	}
 
 	// Find non-existent document
-	_, err = coll.FindById([]byte("nonexistent"))
+	_, err = coll.FindById("nonexistent")
 	if err == nil || !bingo.IsErrDocumentNotFound(err) {
 		t.Fatalf("Expected a document not found error, got: %v", err)
 	}
@@ -180,7 +325,7 @@ func TestMiddlewareFunctionality(t *testing.T) {
 	coll.Insert(doc)
 
 	// Find and check if middleware modified the name
-	foundDoc, err := coll.FindById([]byte("1"))
+	foundDoc, err := coll.FindById("1")
 	if err != nil {
 		t.Fatalf("Failed to find document: %v", err)
 	}

@@ -103,7 +103,7 @@ func (ir *InsertResult) fail(errs ...error) {
 
 // Insert inserts a document into the collection. If the document already exists, an error is returned.
 func (c *Collection[T]) Insert(document T) (ir *InsertResult) {
-	_, err := c.FindById(document.Key())
+	_, err := c.FindByBytesId(document.Key())
 	if err != nil && errors.Is(err, ErrDocumentNotFound) {
 		return c.InsertOrUpsert(document)
 	}
@@ -168,83 +168,181 @@ func (c *Collection[T]) InsertOrUpsert(document T) (ir *InsertResult) {
 	return
 }
 
-// FindById retrieves a document from the collection by its id. If the document is not found, an error is returned.
-func (c *Collection[T]) FindById(id []byte) (T, error) {
-	var document T
-	err := c.Driver.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(c.nameBytes)
-		if bucket == nil {
-			return errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
-		}
-		value := bucket.Get(id)
-		if value == nil {
-			return errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
-		}
-		return Unmarshaller.Unmarshal(value, &document)
+func (c *Collection[T]) FindOne(filter func(doc T) bool) (T, error) {
+	var empty T
+	r, _, err := c.queryFind(Query[T]{
+		Filter: filter,
 	})
-	return document, err
-}
 
-var stoperr = fmt.Errorf("stop")
-
-func (c *Collection[DocumentType]) queryKeys(keys ...string) []DocumentType {
-	var documents []DocumentType
-	_ = c.Driver.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(c.nameBytes)
-		if bucket == nil {
-			return fmt.Errorf("bucket %s not found", c.Name)
-		}
-		for _, key := range keys {
-			value := bucket.Get([]byte(key))
-			if value == nil {
-				continue
-			}
-			var document DocumentType
-			err := Unmarshaller.Unmarshal(value, &document)
-			if err != nil {
-				continue
-			}
-			documents = append(documents, document)
-		}
-		return nil
-	})
-	return documents
-}
-
-func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
-	var documents []T
-	var currentFound = 0
-	var last = 0
-	err := c.Driver.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(c.nameBytes)
-		if bucket == nil {
-			return fmt.Errorf("bucket %s not found", c.Name)
-		}
-		wbucket := &WrappedBucket{bucket}
-		return wbucket.ReverseForEach(func(k, v []byte) error {
-			last += 1
-			if last <= q.Skip {
-				return nil
-			}
-
-			var document T
-			err := Unmarshaller.Unmarshal(v, &document)
-			if err != nil {
-				return err
-			}
-			if q.Filter(document) {
-				documents = append(documents, document)
-				currentFound += 1
-				if q.Count > 0 && currentFound >= q.Count {
-					return stoperr
-				}
-			}
-			return nil
-		})
-	})
-	if err != nil && !errors.Is(err, stoperr) {
-		return documents, last, err
+	if err != nil {
+		return empty, err
 	}
 
-	return documents, last, err
+	if len(r) == 0 {
+		return empty, errors.Join(ErrDocumentNotFound, fmt.Errorf("document not found"))
+	}
+
+	return r[0], err
+}
+
+type FindOptsFunc func(opts *findOpts)
+
+type findOpts struct {
+	Skip  int
+	Count int
+}
+
+func applyOpts[T DocumentSpec](query *Query[T], opts ...FindOptsFunc) {
+	options := findOpts{}
+	for _, opt := range opts {
+		opt(&options)
+	}
+	query.Skip = options.Skip
+	query.Count = options.Count
+}
+
+func Skip(skip int) FindOptsFunc {
+	return func(opts *findOpts) {
+		opts.Skip = skip
+	}
+}
+
+func Count(count int) FindOptsFunc {
+	return func(opts *findOpts) {
+		opts.Count = count
+	}
+}
+
+func (c *Collection[T]) Find(filter func(doc T) bool, opts ...FindOptsFunc) ([]T, error) {
+	q := Query[T]{
+		Filter: filter,
+	}
+	applyOpts[T](&q, opts...)
+
+	r, _, err := c.queryFind(q)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(r) == 0 {
+		return nil, errors.Join(ErrDocumentNotFound, fmt.Errorf("document not found"))
+	}
+
+	return r, err
+}
+
+func (c *Collection[T]) Delete(docs ...T) error {
+	for _, doc := range docs {
+		if err := c.DeleteOne(doc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Collection[T]) Update(docs ...T) error {
+	for _, doc := range docs {
+		if err := c.UpdateOne(doc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// FindByBytesId retrieves a document from the collection by its id. If the document is not found, an error is returned.
+func (c *Collection[T]) FindByBytesId(id []byte) (T, error) {
+	var document T
+	r := c.queryKeys(string(id))
+	if len(r) == 0 {
+		return document, errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
+	}
+	document = r[0]
+	return document, nil
+}
+
+// FindByBytesIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+func (c *Collection[T]) FindByBytesIds(ids ...[]byte) []T {
+	idStrings := make([]string, len(ids))
+	for i, id := range ids {
+		idStrings[i] = string(id)
+	}
+	return c.queryKeys(idStrings...)
+}
+
+// FindById retrieves a document from the collection by its id. If the document is not found, an error is returned.
+func (c *Collection[T]) FindById(id string) (T, error) {
+	var document T
+	r := c.queryKeys(id)
+	if len(r) == 0 {
+		return document, errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
+	}
+	document = r[0]
+	return document, nil
+}
+
+// FindByIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+func (c *Collection[T]) FindByIds(ids ...string) []T {
+	return c.queryKeys(ids...)
+}
+
+func (c *Collection[T]) UpdateOne(doc T) error {
+	if c.beforeUpdate != nil {
+		err := c.beforeUpdate(&doc)
+		if err != nil {
+			return err
+		}
+	}
+
+	marshal, err := Marshaller.Marshal(doc)
+	if err != nil {
+		return err
+	}
+
+	err = c.Driver.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		return bucket.Put(doc.Key(), marshal)
+	})
+	if err != nil {
+		return err
+	}
+
+	if c.afterUpdate != nil {
+		err := c.afterUpdate(&doc)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Collection[T]) DeleteOne(doc T) error {
+	if c.beforeDelete != nil {
+		err := c.beforeDelete(&doc)
+		if err != nil {
+			return err
+		}
+	}
+
+	err := c.Driver.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		return bucket.Delete(doc.Key())
+	})
+	if err != nil {
+		return err
+	}
+
+	if c.afterDelete != nil {
+		err := c.afterDelete(&doc)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

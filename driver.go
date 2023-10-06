@@ -56,7 +56,7 @@ func IsErrDocumentExists(err error) bool {
 }
 
 // DriverConfiguration represents the configuration for a database driver.
-// DeleteNoVerify specifies whether or not to verify a Collection DROP operation before executing it.
+// DeleteNoVerify specifies whether to verify a Collection DROP operation before executing it.
 // Filename specifies the filename of the database file.
 type DriverConfiguration struct {
 	DeleteNoVerify bool
