@@ -6,6 +6,70 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+var stoperr = fmt.Errorf("stop")
+
+func (c *Collection[DocumentType]) queryKeys(keys ...string) []DocumentType {
+	var documents []DocumentType
+	_ = c.Driver.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		for _, key := range keys {
+			value := bucket.Get([]byte(key))
+			if value == nil {
+				continue
+			}
+			var document DocumentType
+			err := Unmarshaller.Unmarshal(value, &document)
+			if err != nil {
+				continue
+			}
+			documents = append(documents, document)
+		}
+		return nil
+	})
+	return documents
+}
+
+func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
+	var documents []T
+	var currentFound = 0
+	var last = 0
+	err := c.Driver.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		wbucket := &WrappedBucket{bucket}
+		return wbucket.ReverseForEach(func(k, v []byte) error {
+			last += 1
+			if last <= q.Skip {
+				return nil
+			}
+
+			var document T
+			err := Unmarshaller.Unmarshal(v, &document)
+			if err != nil {
+				return err
+			}
+			if q.Filter(document) {
+				documents = append(documents, document)
+				currentFound += 1
+				if q.Count > 0 && currentFound >= q.Count {
+					return stoperr
+				}
+			}
+			return nil
+		})
+	})
+	if err != nil && !errors.Is(err, stoperr) {
+		return documents, last, err
+	} else {
+		return documents, last, nil
+	}
+}
+
 // Query represents a query for filtering and retrieving documents in the collection. It provides flexible options for selecting documents based on various criteria.
 type Query[T DocumentSpec] struct {
 	// Filter is a function that defines a filtering criteria. It should return true if a document matches the criteria and should be included in the result.
