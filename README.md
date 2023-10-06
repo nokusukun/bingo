@@ -216,8 +216,44 @@ if err != nil {
     t.Fatalf("Failed to update document: %v", err)
 }
 ```
+#### Using Iterators
 
-### Querying for Documents
+```go
+err := coll.UpdateIter(func(doc *TestDocument) *TestDocument {
+	if doc.Name == "Apple" {
+		doc.Name = "Pineapple"
+		return doc
+	}
+    return nil
+})
+```
+
+### Deleting a Document
+
+```go
+result, err := coll.FindOne(func(doc TestDocument) bool {
+    return doc.Name == "Apple"
+})
+
+if err != nil {
+    t.Fatalf("Failed to find document: %v", err)
+}
+
+err = coll.DeleteOne(result)
+if err != nil {
+    t.Fatalf("Failed to delete document: %v", err)
+}
+```
+
+#### Using Iterators
+
+```go
+err := coll.DeleteIter(func(doc *TestDocument) bool {
+    return doc.Name == "Apple"
+})
+```
+
+## Querying for Documents
 
 ```go
 result := userCollection.Query(bingo.Query[User]{
@@ -261,13 +297,13 @@ The `Validate` method allows you to validate the query result before performing 
 newText := "Hello World!"
 
 err := Posts.Query(bingo.Query[Post]{
-    Keys: []string{c.Param("id")}, // Get only the post with the given ID
+    KeysStr: []string{c.Param("id")}, // Get only the post with the given ID
 }).Validate(func(qr *bingo.QueryResult[Post]) error {
     if !qr.Any() { 
         return fmt.Errorf("404::post not found") // Return a premature error if no post was found
     }
     return nil
-}).ForEach(func(doc *Post) error {
+}).Iter(func(doc *Post) error {
     if doc.Author != username {
         return fmt.Errorf("401::you are not the author of this post")
     }
@@ -295,7 +331,7 @@ err := Posts.Query(bingo.Query[Post]{
     return nil
 }).Filter(func (doc Post) bool {
     return doc.Edited == 0 // Only get posts that have not been edited
-}).ForEach(func(doc *Post) error {
+}).Iter(func(doc *Post) error {
     doc.Content = newText
     doc.Edited = time.Now().Unix()
     return nil
@@ -315,7 +351,7 @@ err := userCollection.Query(bingo.Query[User]{
         return fmt.Errorf("404::user not found") // Return a premature error if no post was found
     }
     return nil
-}).ForEach(func(doc *User) error {
+}).Iter(func(doc *User) error {
 	doc.Email = "new.email@example.com"
 	return nil
 }).Update()

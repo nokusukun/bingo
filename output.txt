@@ -35,7 +35,7 @@ type WrappedBucket struct {
 	*bbolt.Bucket
 }
 
-func (b *WrappedBucket) ReverseForEach(fn func(k, v []byte) error) error {
+func (b *WrappedBucket) ReverseIter(fn func(k, v []byte) error) error {
 	if b.Tx().DB() == nil {
 		return fmt.Errorf("tx is closed")
 	}
@@ -296,7 +296,7 @@ func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
 			return fmt.Errorf("bucket %s not found", c.Name)
 		}
 		wbucket := &WrappedBucket{bucket}
-		return wbucket.ReverseForEach(func(k, v []byte) error {
+		return wbucket.ReverseIter(func(k, v []byte) error {
 			last += 1
 			if last <= q.Skip {
 				return nil
@@ -402,7 +402,7 @@ func (qr *QueryResult[T]) Any() bool {
 	return len(qr.Items) > 0
 }
 
-func (qr *QueryResult[T]) ForEach(f func(doc *T) error) *QueryResult[T] {
+func (qr *QueryResult[T]) Iter(f func(doc *T) error) *QueryResult[T] {
 	if qr.Error != nil {
 		return qr
 	}

@@ -28,7 +28,7 @@ func TestQueryExecution(t *testing.T) {
 
 	t.Run("Query panic on both Key and Filter set", func(t *testing.T) {
 		assert.Panics(t, func() {
-			collection.Query(Query[MockDocument]{Keys: []string{"1"}, Filter: func(doc MockDocument) bool { return true }})
+			collection.Query(Query[MockDocument]{Keys: [][]byte{[]byte("1")}, Filter: func(doc MockDocument) bool { return true }})
 		})
 	})
 
@@ -60,10 +60,10 @@ func TestQueryResultFunctions(t *testing.T) {
 		assert.True(t, qr.Any())
 	})
 
-	t.Run("ForEach stops on error", func(t *testing.T) {
+	t.Run("Iter stops on error", func(t *testing.T) {
 		qr := &QueryResult[MockDocument]{Items: mockDocuments}
 		err := errors.New("sample error")
-		qr.ForEach(func(doc *MockDocument) error {
+		qr.Iter(func(doc *MockDocument) error {
 			return err
 		})
 		assert.Equal(t, err, qr.Error)

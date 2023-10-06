@@ -32,7 +32,7 @@ type WrappedBucket struct {
 	*bbolt.Bucket
 }
 
-func (b *WrappedBucket) ReverseForEach(fn func(k, v []byte) error) error {
+func (b *WrappedBucket) ReverseIter(fn func(k, v []byte) error) error {
 	if b.Tx().DB() == nil {
 		return fmt.Errorf("tx is closed")
 	}

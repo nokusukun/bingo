@@ -3,6 +3,7 @@ package bingo_test
 import (
 	"github.com/nokusukun/bingodb"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -213,6 +214,136 @@ func TestDeleteOne(t *testing.T) {
 	}
 }
 
+func TestDeleteIter(t *testing.T) {
+	config := bingo.DriverConfiguration{
+		Filename:       "testquery.db",
+		DeleteNoVerify: true,
+	}
+	driver, err := bingo.NewDriver(config)
+	if err != nil {
+		t.Fatalf("Failed to initialize driver: %v", err)
+	}
+
+	defer func() {
+		driver.Close()
+		os.Remove("testquery.db")
+	}()
+
+	// Collection
+	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
+
+	docs := []TestDocument{
+		{ID: "1", Name: "Apple"},
+		{ID: "2", Name: "Banana"},
+		{ID: "3", Name: "Cherry"},
+		{ID: "4", Name: "Pineapple"},
+		{ID: "5", Name: "Strawberry"},
+		{ID: "6", Name: "Watermelon"},
+		{ID: "7", Name: "Orange"},
+		{ID: "8", Name: "Grape"},
+		{ID: "9", Name: "Kiwi"},
+		{ID: "10", Name: "Mango"},
+		{ID: "11", Name: "Peach"},
+		{ID: "12", Name: "Pear"},
+		{ID: "13", Name: "Plum"},
+		{ID: "14", Name: "Pomegranate"},
+		{ID: "15", Name: "Raspberry"},
+	}
+	for _, doc := range docs {
+		result := coll.Insert(doc)
+		if !result.Success {
+			t.Fatalf("Failed to insert document: %v", result.Error())
+		}
+	}
+
+	err = coll.DeleteIter(func(doc *TestDocument) bool {
+		return doc.Name[0] == 'P'
+	})
+	if err != nil {
+		t.Fatalf("Failed to delete documents: %v", err)
+	}
+
+	result, err := coll.Find(func(doc TestDocument) bool {
+		return doc.Name[0] == 'P'
+	})
+	if err != nil && !bingo.IsErrDocumentNotFound(err) {
+		t.Fatalf("Failed to find documents: %v", err)
+	}
+
+	if len(result) > 0 {
+		t.Fatalf("Found documents that should have been deleted")
+	}
+}
+
+func TestUpdateIter(t *testing.T) {
+	config := bingo.DriverConfiguration{
+		Filename:       "testquery.db",
+		DeleteNoVerify: true,
+	}
+	driver, err := bingo.NewDriver(config)
+	if err != nil {
+		t.Fatalf("Failed to initialize driver: %v", err)
+	}
+
+	defer func() {
+		driver.Close()
+		os.Remove("testquery.db")
+	}()
+
+	// Collection
+	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
+
+	docs := []TestDocument{
+		{ID: "1", Name: "Apple"},
+		{ID: "2", Name: "Banana"},
+		{ID: "3", Name: "Cherry"},
+		{ID: "4", Name: "Pineapple"},
+		{ID: "5", Name: "Strawberry"},
+		{ID: "6", Name: "Watermelon"},
+		{ID: "7", Name: "Orange"},
+		{ID: "8", Name: "Grape"},
+		{ID: "9", Name: "Kiwi"},
+		{ID: "10", Name: "Mango"},
+		{ID: "11", Name: "Peach"},
+		{ID: "12", Name: "Pear"},
+		{ID: "13", Name: "Plum"},
+		{ID: "14", Name: "Pomegranate"},
+		{ID: "15", Name: "Raspberry"},
+	}
+	for _, doc := range docs {
+		result := coll.Insert(doc)
+		if !result.Success {
+			t.Fatalf("Failed to insert document: %v", result.Error())
+		}
+	}
+
+	err = coll.UpdateIter(func(doc *TestDocument) *TestDocument {
+		if strings.Contains(doc.Name, "P") {
+			doc.Name = "Modified"
+			return doc
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to update documents: %v", err)
+	}
+
+	result, err := coll.Find(func(doc TestDocument) bool {
+		return doc.Name == "Modified"
+	})
+	if err != nil {
+		t.Fatalf("Failed to find documents: %v", err)
+	}
+
+	if len(result) == 0 {
+		t.Fatalf("Failed to find documents that should have been updated")
+	}
+
+	if len(result) != 5 {
+		t.Fatalf("Unexpected number of documents found: %d", len(result))
+	}
+}
+
 func TestQueryFunctionality(t *testing.T) {
 	config := bingo.DriverConfiguration{
 		Filename:       "testquery.db",
@@ -259,7 +390,7 @@ func TestQueryFunctionality(t *testing.T) {
 	}
 
 	// Query by keys
-	keyQuery := bingo.Query[TestDocument]{Keys: []string{"1", "3"}}
+	keyQuery := bingo.Query[TestDocument]{Keys: [][]byte{[]byte("1"), []byte("3")}}
 	kResult := coll.Query(keyQuery)
 	if kResult.Count() != 2 {
 		t.Fatalf("Unexpected count for key-based query: %d", kResult.Count())

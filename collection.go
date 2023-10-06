@@ -253,7 +253,7 @@ func (c *Collection[T]) Update(docs ...T) error {
 // FindByBytesId retrieves a document from the collection by its id. If the document is not found, an error is returned.
 func (c *Collection[T]) FindByBytesId(id []byte) (T, error) {
 	var document T
-	r := c.queryKeys(string(id))
+	r := c.queryKeys(id)
 	if len(r) == 0 {
 		return document, errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
 	}
@@ -263,17 +263,13 @@ func (c *Collection[T]) FindByBytesId(id []byte) (T, error) {
 
 // FindByBytesIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
 func (c *Collection[T]) FindByBytesIds(ids ...[]byte) []T {
-	idStrings := make([]string, len(ids))
-	for i, id := range ids {
-		idStrings[i] = string(id)
-	}
-	return c.queryKeys(idStrings...)
+	return c.queryKeys(ids...)
 }
 
 // FindById retrieves a document from the collection by its id. If the document is not found, an error is returned.
 func (c *Collection[T]) FindById(id string) (T, error) {
 	var document T
-	r := c.queryKeys(id)
+	r := c.queryKeys([]byte(id))
 	if len(r) == 0 {
 		return document, errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
 	}
@@ -283,9 +279,105 @@ func (c *Collection[T]) FindById(id string) (T, error) {
 
 // FindByIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
 func (c *Collection[T]) FindByIds(ids ...string) []T {
-	return c.queryKeys(ids...)
+	idsBytes := make([][]byte, len(ids))
+	for i, id := range ids {
+		idsBytes[i] = []byte(id)
+	}
+	return c.queryKeys(idsBytes...)
 }
 
+// UpdateIter updates documents in the collection that match the filter function.
+// The updateFunc is called on each document that matches the filter function.
+// return the document from the updateFunc to update the document, otherwise return nil to skip the document.
+func (c *Collection[T]) UpdateIter(updateFunc func(*T) *T) error {
+
+	return c.Driver.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		wbucket := &WrappedBucket{bucket}
+		return wbucket.ReverseIter(func(k, v []byte) error {
+			var document T
+			err := Unmarshaller.Unmarshal(v, &document)
+			if err != nil {
+				return err
+			}
+			newDocument := updateFunc(&document)
+			if newDocument == nil {
+				return nil
+			}
+			if c.beforeUpdate != nil {
+				err := c.beforeUpdate(newDocument)
+				if err != nil {
+					return err
+				}
+			}
+
+			marshal, err := Marshaller.Marshal(newDocument)
+			if err != nil {
+				return err
+			}
+			err = bucket.Put(document.Key(), marshal)
+			if err != nil {
+				return err
+			}
+
+			if c.afterUpdate != nil {
+				err := c.afterUpdate(newDocument)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
+}
+
+// DeleteIter deletes documents from the collection that match the filter function.
+// The deleteFunc is called on each document that matches the filter function.
+// return true from the deleteFunc to delete the document, otherwise return false to skip the document.
+func (c *Collection[T]) DeleteIter(deleteFunc func(*T) bool) error {
+
+	return c.Driver.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		wbucket := &WrappedBucket{bucket}
+		return wbucket.ReverseIter(func(k, v []byte) error {
+			var document T
+			err := Unmarshaller.Unmarshal(v, &document)
+			if err != nil {
+				return err
+			}
+			if !deleteFunc(&document) {
+				return nil
+			}
+			if c.beforeDelete != nil {
+				err := c.beforeDelete(&document)
+				if err != nil {
+					return err
+				}
+			}
+
+			err = bucket.Delete(document.Key())
+			if err != nil {
+				return err
+			}
+
+			if c.afterDelete != nil {
+				err := c.afterDelete(&document)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
+}
+
+// UpdateOne updates a document in the collection.
 func (c *Collection[T]) UpdateOne(doc T) error {
 	if c.beforeUpdate != nil {
 		err := c.beforeUpdate(&doc)
@@ -319,6 +411,7 @@ func (c *Collection[T]) UpdateOne(doc T) error {
 	return nil
 }
 
+// DeleteOne deletes a document from the collection.
 func (c *Collection[T]) DeleteOne(doc T) error {
 	if c.beforeDelete != nil {
 		err := c.beforeDelete(&doc)
@@ -345,4 +438,111 @@ func (c *Collection[T]) DeleteOne(doc T) error {
 		}
 	}
 	return nil
+}
+
+var stoperr = fmt.Errorf("stop")
+
+func (c *Collection[DocumentType]) queryKeys(keys ...[]byte) []DocumentType {
+	var documents []DocumentType
+	_ = c.Driver.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		for _, key := range keys {
+			value := bucket.Get(key)
+			if value == nil {
+				continue
+			}
+			var document DocumentType
+			err := Unmarshaller.Unmarshal(value, &document)
+			if err != nil {
+				continue
+			}
+			documents = append(documents, document)
+		}
+		return nil
+	})
+	return documents
+}
+
+func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
+	var documents []T
+	var currentFound = 0
+	var last = 0
+	err := c.Driver.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(c.nameBytes)
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", c.Name)
+		}
+		wbucket := &WrappedBucket{bucket}
+		return wbucket.ReverseIter(func(k, v []byte) error {
+			last += 1
+			if last <= q.Skip {
+				return nil
+			}
+
+			var document T
+			err := Unmarshaller.Unmarshal(v, &document)
+			if err != nil {
+				return err
+			}
+			if q.Filter(document) {
+				documents = append(documents, document)
+				currentFound += 1
+				if q.Count > 0 && currentFound >= q.Count {
+					return stoperr
+				}
+			}
+			return nil
+		})
+	})
+	if err != nil && !errors.Is(err, stoperr) {
+		return documents, last, err
+	} else {
+		return documents, last, nil
+	}
+}
+
+// Query executes the query and returns a QueryResult object that contains the results of the query.
+func (c *Collection[T]) Query(q Query[T]) *QueryResult[T] {
+	if q.Keys != nil && q.Filter != nil {
+		panic(fmt.Errorf("cannot use both key and filter"))
+	}
+
+	if len(q.KeysStr) > 0 {
+		keys := make([][]byte, len(q.KeysStr))
+		for i, key := range q.KeysStr {
+			keys[i] = []byte(key)
+		}
+		q.Keys = append(q.Keys, keys...)
+	}
+
+	result := &QueryResult[T]{
+		Collection: c,
+	}
+	if q.Keys != nil {
+		items := c.queryKeys(q.Keys...)
+		for _, item := range items {
+			item := item
+			result.Items = append(result.Items, &item)
+		}
+		return result
+	}
+
+	if q.Filter != nil {
+		items, last, err := c.queryFind(q)
+		if err != nil {
+			result.Error = errors.Join(err, fmt.Errorf("error while querying"))
+		}
+		result.Last = last
+		for _, item := range items {
+			item := item
+			result.Items = append(result.Items, &item)
+		}
+		return result
+	}
+
+	result.Error = fmt.Errorf("no query provided")
+	return result
 }
