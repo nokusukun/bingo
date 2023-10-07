@@ -66,10 +66,13 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 	if driver.Closed {
 		panic(fmt.Errorf("driver is closed"))
 	}
-	err := driver.addCollection(name)
-	if err != nil {
-		panic(fmt.Sprintf("unable to add collection to metadata: %v", err))
+	if name != "__metadata" {
+		err := driver.addCollection(name)
+		if err != nil {
+			panic(fmt.Sprintf("unable to add collection to metadata: %v", err))
+		}
 	}
+
 	return &Collection[T]{
 		Driver:    driver,
 		Name:      name,
