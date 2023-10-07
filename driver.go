@@ -99,7 +99,57 @@ func (c *Collection[DocumentType]) Drop() error {
 			return fmt.Errorf("delete not allowed, set environment variable BINGO_ALLOW_DROP_%s=true to allow", strings.ToUpper(c.Name))
 		}
 	}
+	_ = c.Driver.removeCollection(c.Name)
 	return c.Driver.db.Update(func(tx *bbolt.Tx) error {
 		return tx.DeleteBucket([]byte(c.Name))
 	})
+}
+
+type Metadata struct {
+	K string
+	V any
+}
+
+func (m Metadata) Key() []byte {
+	return []byte(m.K)
+}
+
+func (d *Driver) WriteMetadata(k string, v any) error {
+	metadata := CollectionFrom[Metadata](d, "__metadata")
+	r := metadata.InsertOrUpsert(Metadata{K: k, V: v})
+	return r.Error()
+}
+
+func (d *Driver) ReadMetadata(k string) (any, error) {
+	metadata := CollectionFrom[Metadata](d, "__metadata")
+	r, err := metadata.FindOne(func(doc Metadata) bool {
+		return doc.K == k
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.V, nil
+}
+
+func (d *Driver) addCollection(name string) error {
+	return d.WriteMetadata(fmt.Sprintf("collection:%v", name), true)
+}
+
+func (d *Driver) removeCollection(name string) error {
+	return d.WriteMetadata(fmt.Sprintf("collection:%v", name), false)
+}
+
+func (d *Driver) GetCollections() ([]string, error) {
+	metadata := CollectionFrom[Metadata](d, "__metadata")
+	result, err := metadata.Find(func(doc Metadata) bool {
+		return strings.HasPrefix(doc.K, "collection:") && doc.V.(bool)
+	})
+	if err != nil {
+		return nil, err
+	}
+	var collections []string
+	for _, doc := range result {
+		collections = append(collections, strings.TrimPrefix(doc.K, "collection:"))
+	}
+	return collections, nil
 }

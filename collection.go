@@ -66,6 +66,10 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 	if driver.Closed {
 		panic(fmt.Errorf("driver is closed"))
 	}
+	err := driver.addCollection(name)
+	if err != nil {
+		panic(fmt.Sprintf("unable to add collection to metadata: %v", err))
+	}
 	return &Collection[T]{
 		Driver:    driver,
 		Name:      name,
@@ -185,15 +189,15 @@ func (c *Collection[T]) FindOne(filter func(doc T) bool) (T, error) {
 	return r[0], err
 }
 
-type FindOptsFunc func(opts *findOpts)
+type IterOptsFunc func(opts *iterOpts)
 
-type findOpts struct {
+type iterOpts struct {
 	Skip  int
 	Count int
 }
 
-func applyOpts[T DocumentSpec](query *Query[T], opts ...FindOptsFunc) {
-	options := findOpts{}
+func applyOpts[T DocumentSpec](query *Query[T], opts ...IterOptsFunc) {
+	options := iterOpts{}
 	for _, opt := range opts {
 		opt(&options)
 	}
@@ -201,19 +205,19 @@ func applyOpts[T DocumentSpec](query *Query[T], opts ...FindOptsFunc) {
 	query.Count = options.Count
 }
 
-func Skip(skip int) FindOptsFunc {
-	return func(opts *findOpts) {
+func Skip(skip int) IterOptsFunc {
+	return func(opts *iterOpts) {
 		opts.Skip = skip
 	}
 }
 
-func Count(count int) FindOptsFunc {
-	return func(opts *findOpts) {
+func Count(count int) IterOptsFunc {
+	return func(opts *iterOpts) {
 		opts.Count = count
 	}
 }
 
-func (c *Collection[T]) Find(filter func(doc T) bool, opts ...FindOptsFunc) ([]T, error) {
+func (c *Collection[T]) Find(filter func(doc T) bool, opts ...IterOptsFunc) ([]T, error) {
 	q := Query[T]{
 		Filter: filter,
 	}

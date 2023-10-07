@@ -1,7 +1,7 @@
 package bingo_test
 
 import (
-	"github.com/nokusukun/bingodb"
+	"github.com/nokusukun/bingo"
 	"os"
 	"strings"
 	"testing"
