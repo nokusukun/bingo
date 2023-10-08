@@ -54,9 +54,9 @@ func TestCRUD(t *testing.T) {
 
 	// Insert
 	doc := TestDocument{ID: "1", Name: "Test"}
-	result := coll.Insert(doc)
-	if !result.Success {
-		t.Fatalf("Failed to insert document: %v", result.Error())
+	_, err = coll.Insert(doc)
+	if err != nil {
+		t.Fatalf("Failed to insert document: %v", err)
 	}
 
 	// Find
@@ -93,9 +93,9 @@ func TestFindAll(t *testing.T) {
 		{ID: "3", Name: "Cherry"},
 	}
 	for _, doc := range docs {
-		result := coll.Insert(doc)
-		if !result.Success {
-			t.Fatalf("Failed to insert document: %v", result.Error())
+		_, err = coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
 		}
 	}
 
@@ -132,9 +132,9 @@ func TestUpdateOne(t *testing.T) {
 		{ID: "3", Name: "Cherry"},
 	}
 	for _, doc := range docs {
-		result := coll.Insert(doc)
-		if !result.Success {
-			t.Fatalf("Failed to insert document: %v", result.Error())
+		_, err = coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
 		}
 	}
 
@@ -187,9 +187,9 @@ func TestDeleteOne(t *testing.T) {
 		{ID: "3", Name: "Cherry"},
 	}
 	for _, doc := range docs {
-		result := coll.Insert(doc)
-		if !result.Success {
-			t.Fatalf("Failed to insert document: %v", result.Error())
+		_, err := coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
 		}
 	}
 
@@ -250,9 +250,9 @@ func TestDeleteIter(t *testing.T) {
 		{ID: "15", Name: "Raspberry"},
 	}
 	for _, doc := range docs {
-		result := coll.Insert(doc)
-		if !result.Success {
-			t.Fatalf("Failed to insert document: %v", result.Error())
+		_, err := coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
 		}
 	}
 
@@ -311,9 +311,9 @@ func TestUpdateIter(t *testing.T) {
 		{ID: "15", Name: "Raspberry"},
 	}
 	for _, doc := range docs {
-		result := coll.Insert(doc)
-		if !result.Success {
-			t.Fatalf("Failed to insert document: %v", result.Error())
+		_, err := coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
 		}
 	}
 
@@ -369,9 +369,9 @@ func TestQueryFunctionality(t *testing.T) {
 		{ID: "3", Name: "Cherry"},
 	}
 	for _, doc := range docs {
-		result := coll.Insert(doc)
-		if !result.Success {
-			t.Fatalf("Failed to insert document: %v", result.Error())
+		_, err := coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
 		}
 	}
 
@@ -416,8 +416,8 @@ func TestErrorScenarios(t *testing.T) {
 
 	// Insert doc with missing ID (should fail validation)
 	doc := TestDocument{Name: "Invalid"}
-	result := coll.Insert(doc)
-	if result.Success || result.Error() == nil {
+	_, err = coll.Insert(doc)
+	if err == nil {
 		t.Fatal("Expected insertion failure due to validation error")
 	}
 

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"go.etcd.io/bbolt"
-	"strings"
 )
 
 // DocumentSpec represents a document that can be stored in a collection.
@@ -80,99 +79,110 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 	}
 }
 
-// InsertResult represents the result of an insert operation.
-type InsertResult struct {
-	Success    bool
-	Errors     []error
-	InsertedId []byte
+type InsertOptions struct {
+	IgnoreErrors bool
+	Upsert       bool
 }
 
-// Error returns an error object that contains all the errors encountered during the insert operation.
-func (ir *InsertResult) Error() error {
-	if len(ir.Errors) == 0 {
-		return nil
-	}
-	var s []string
-	for _, err := range ir.Errors {
-		s = append(s, err.Error())
-	}
-	return fmt.Errorf(strings.Join(s, ": "))
+func IgnoreErrors(opts *InsertOptions) {
+	opts.IgnoreErrors = true
 }
 
-func (ir *InsertResult) fail(errs ...error) {
-	for _, err := range errs {
-		if err != nil {
-			ir.Success = false
-			ir.Errors = append(ir.Errors, err)
-		}
-	}
+func Upsert(opts *InsertOptions) {
+	opts.Upsert = true
 }
 
-// Insert inserts a document into the collection. If the document already exists, an error is returned.
-func (c *Collection[T]) Insert(document T) (ir *InsertResult) {
-	_, err := c.FindByBytesId(document.Key())
-	if err != nil && errors.Is(err, ErrDocumentNotFound) {
-		return c.InsertOrUpsert(document)
-	}
-
-	if err != nil && !errors.Is(err, ErrDocumentNotFound) {
-		return &InsertResult{Errors: []error{err}}
-	}
-
-	return &InsertResult{Errors: []error{ErrDocumentExists, fmt.Errorf("key %v already exists", string(document.Key()))}}
-
-}
-
-// InsertOrUpsert inserts a document into the collection. If the document already exists, it is updated instead.
-func (c *Collection[T]) InsertOrUpsert(document T) (ir *InsertResult) {
-	ir = &InsertResult{
-		Success: true,
-	}
-	if err := c.Driver.val.Struct(document); err != nil {
-		ir.fail(err)
-		return
-	}
-
-	if c.beforeInsert != nil {
-		err := c.beforeInsert(&document)
-		if err != nil {
-			ir.fail(err)
-			return
-		}
-	}
-
-	marshal, err := Marshaller.Marshal(document)
+// Insert inserts a document into the collection. If upsert and ignoreErrors are not set, an error is returned if the document already exists.
+// If IgnoreErrors is passed without Upsert, the document is not inserted and no error is returned if the document already exists.
+func (c *Collection[T]) Insert(document T, opts ...func(options *InsertOptions)) ([]byte, error) {
+	ids, err := c.inserts([]T{document}, opts...)
 	if err != nil {
-		ir.fail(err)
-		return
+		return nil, err
 	}
-	var idBytes []byte
-	ir.fail(c.Driver.db.Update(func(tx *bbolt.Tx) error {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return ids[0], nil
+}
+
+// InsertMany inserts a document into the collection. If the document already exists, an error is returned.
+func (c *Collection[T]) InsertMany(documents []T, opts ...func(options *InsertOptions)) ([][]byte, error) {
+	return c.inserts(documents, opts...)
+}
+
+func (c *Collection[T]) inserts(docs []T, opts ...func(options *InsertOptions)) ([][]byte, error) {
+	opt := &InsertOptions{}
+	for _, o := range opts {
+		o(opt)
+	}
+
+	var results [][]byte
+	err := c.Driver.db.Update(func(tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(c.nameBytes)
 		if err != nil {
 			return err
 		}
 
-		key := document.Key()
-		if len(key) == 0 {
-			uniqueId, _ := bucket.NextSequence()
-			idBytes = []byte(fmt.Sprintf("%v", uniqueId))
-		} else {
-			idBytes = key
+		for _, doc := range docs {
+			id, err := c.insertWithTx(bucket, doc, opt)
+			if !opt.IgnoreErrors {
+				return err
+			}
+			results = append(results, id)
 		}
-		return bucket.Put(idBytes, marshal)
-	}))
+		return nil
+	})
 
-	if c.afterInsert != nil {
-		err := c.afterInsert(&document)
-		if err != nil {
-			ir.fail(err)
-			return
+	return results, err
+}
+
+func (c *Collection[T]) insertWithTx(bucket *bbolt.Bucket, doc T, opt *InsertOptions) ([]byte, error) {
+	if !opt.Upsert {
+		_, err := c.FindByBytesId(doc.Key())
+		if err == nil {
+			return nil, ErrDocumentExists
 		}
 	}
 
-	ir.InsertedId = idBytes
-	return
+	if err := c.Driver.val.Struct(doc); err != nil {
+		return nil, err
+	}
+
+	if c.beforeInsert != nil {
+		err := c.beforeInsert(&doc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	marshal, err := Marshaller.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	var idBytes []byte
+
+	key := doc.Key()
+	if len(key) == 0 {
+		uniqueId, _ := bucket.NextSequence()
+		idBytes = []byte(fmt.Sprintf("%v", uniqueId))
+	} else {
+		idBytes = key
+	}
+	err = bucket.Put(idBytes, marshal)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if c.afterInsert != nil {
+		err := c.afterInsert(&doc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return idBytes, nil
 }
 
 func (c *Collection[T]) FindOne(filter func(doc T) bool) (T, error) {

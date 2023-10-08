@@ -19,6 +19,86 @@ Install the library using `go get`:
 go get -u github.com/nokusukun/bingo
 ```
 
+## Full Example
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/nokusukun/bingo"
+	"strings"
+)
+
+type Platform string
+
+const (
+	Excel  = "excel"
+	Sheets = "sheets"
+)
+
+type Function struct {
+	Name        string   `json:"name,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	Example     string   `json:"example,omitempty"`
+	Description string   `json:"description,omitempty"`
+	URL         string   `json:"URL,omitempty"`
+	Platform    Platform `json:"platform,omitempty"`
+}
+
+func (f Function) Key() []byte {
+	return []byte(fmt.Sprintf("%s-%s", f.Name, f.Platform))
+}
+
+func main() {
+	driver, err := bingo.NewDriver(bingo.DriverConfig{
+		Database: "clippy.db",
+	}
+	if err != nil {
+		panic(err)
+	}
+
+	functionDB := bingo.CollectionFrom[Function](driver, "functions")
+
+	// Inserting
+	id, err := functionDB.Insert(Function{
+		Name:        "SUM",
+		Category:    "Math",
+		Args:        []string{"a", "b"},
+		Example:     "SUM(1, 2)",
+		Description: "Adds two numbers together",
+		URL:         "https://support.google.com/docs/answer/3093669?hl=en",
+		Platform:    Sheets,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	searchQuery := "sum"
+	platform := "sheets"
+	// Querying
+	query := functionDB.Query(bingo.Query[Function]{
+		Filter: func(doc Function) bool {
+			return doc.Platform == Platform(platform) && strings.Contains(strings.ToLower(doc.Name), strings.ToLower(searchQuery))
+		},
+		Count: 3,
+	})
+	if query.Error != nil {
+		panic(query.Error)
+	}
+
+	if !query.Any() {
+		panic("No documents found!")
+	}
+
+	for _, function := range query.Items {
+		fmt.Printf("%s: %s\n", function.Name, function.Description)
+	}
+}
+
+```
+
 
 ## Usage:
 
@@ -36,6 +116,7 @@ driver, err := bingo.NewDriver(config)
 
 
 ### 2. Define your document type
+You can specify an autoincrement ID by returning nil in the `Key` method.
 
 ```go
 type User struct {
@@ -89,14 +170,16 @@ users.BeforeUpdate(func(doc *User) error {
 **Inserting documents:**
 
 ```go
-err = users.Insert(User{
+id, err := users.Insert(User{
 	Username: "test",
 	Password: "test123",
 	Email:    "random@rrege.com",
-}).Error()
+})
 if err != nil {
 	panic(err)
 }
+
+fmt.Println("Inserted user with ID:", id)
 ```
 
 **Querying documents:**

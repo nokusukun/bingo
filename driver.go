@@ -116,8 +116,8 @@ func (m Metadata) Key() []byte {
 
 func (d *Driver) WriteMetadata(k string, v any) error {
 	metadata := CollectionFrom[Metadata](d, "__metadata")
-	r := metadata.InsertOrUpsert(Metadata{K: k, V: v})
-	return r.Error()
+	_, err := metadata.Insert(Metadata{K: k, V: v}, Upsert)
+	return err
 }
 
 func (d *Driver) ReadMetadata(k string) (any, error) {
