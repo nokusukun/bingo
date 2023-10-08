@@ -51,22 +51,62 @@ func TestCRUD(t *testing.T) {
 
 	// Collection
 	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
+	t.Run("should insert", func(t *testing.T) {
+		// Insert
+		doc := TestDocument{ID: "1", Name: "Test"}
+		_, err = coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
+		}
+	})
 
-	// Insert
-	doc := TestDocument{ID: "1", Name: "Test"}
-	_, err = coll.Insert(doc)
-	if err != nil {
-		t.Fatalf("Failed to insert document: %v", err)
-	}
+	// should not insert the same document twice
+	t.Run("should not insert the same document twice", func(t *testing.T) {
+		doc := TestDocument{ID: "1", Name: "Test"}
+		_, err = coll.Insert(doc)
+		if err == nil {
+			t.Fatalf("Expected insertion failure due to duplicate key")
+		}
+	})
+
+	// should not insert but not throw an error because IgnoreErrors is passed
+	t.Run("should not insert but not throw an error because IgnoreErrors is passed", func(t *testing.T) {
+		doc := TestDocument{ID: "1", Name: "Test"}
+		id, err := coll.Insert(doc, bingo.IgnoreErrors)
+		if err != nil && id != nil {
+			t.Fatalf("Expected insertion to succeed due to IgnoreErrors")
+		}
+	})
+
+	t.Run("should upsert data", func(t *testing.T) {
+		doc := TestDocument{ID: "1", Name: "Fooby"}
+		id, err := coll.Insert(doc, bingo.Upsert)
+		if err != nil {
+			t.Fatalf("Expected insertion to succeed due to Upsert")
+		}
+		if id == nil {
+			t.Fatalf("Expected ID to be returned due to Upsert")
+		}
+
+		foundDoc, err := coll.FindByBytesId(id)
+		if err != nil {
+			t.Fatalf("Failed to find document: %v", err)
+		}
+		if foundDoc.Name != "Fooby" {
+			t.Fatalf("Unexpected document data: %v", foundDoc)
+		}
+	})
 
 	// Find
-	foundDoc, err := coll.FindById("1")
-	if err != nil {
-		t.Fatalf("Failed to find document: %v", err)
-	}
-	if foundDoc.Name != "Test" {
-		t.Fatalf("Unexpected document data: %v", foundDoc)
-	}
+	t.Run("should find by ID", func(t *testing.T) {
+		foundDoc, err := coll.FindById("1")
+		if err != nil {
+			t.Fatalf("Failed to find document: %v", err)
+		}
+		if !strings.Contains("TestFooby", foundDoc.Name) {
+			t.Fatalf("Unexpected document data: %v", foundDoc)
+		}
+	})
 }
 
 func TestFindAll(t *testing.T) {

@@ -125,7 +125,7 @@ func (c *Collection[T]) inserts(docs []T, opts ...func(options *InsertOptions)) 
 
 		for _, doc := range docs {
 			id, err := c.insertWithTx(bucket, doc, opt)
-			if !opt.IgnoreErrors {
+			if !opt.IgnoreErrors && err != nil {
 				return err
 			}
 			results = append(results, id)

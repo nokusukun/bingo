@@ -10,7 +10,6 @@ import (
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
-var AllDocuments = -1
 
 type HasMarshal interface {
 	Marshal(v interface{}) ([]byte, error)
