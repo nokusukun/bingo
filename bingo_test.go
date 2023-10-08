@@ -171,11 +171,12 @@ func TestUpdateOne(t *testing.T) {
 		{ID: "2", Name: "Banana"},
 		{ID: "3", Name: "Cherry"},
 	}
-	for _, doc := range docs {
-		_, err = coll.Insert(doc)
-		if err != nil {
-			t.Fatalf("Failed to insert document: %v", err)
-		}
+	ids, err := coll.InsertMany(docs)
+	if err != nil {
+		t.Fatalf("Failed to insert document: %v", err)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("Unexpected number of inserted documents: %d", len(ids))
 	}
 
 	result, err := coll.FindOne(func(doc TestDocument) bool {
@@ -226,11 +227,12 @@ func TestDeleteOne(t *testing.T) {
 		{ID: "2", Name: "Banana"},
 		{ID: "3", Name: "Cherry"},
 	}
-	for _, doc := range docs {
-		_, err := coll.Insert(doc)
-		if err != nil {
-			t.Fatalf("Failed to insert document: %v", err)
-		}
+	ids, err := coll.InsertMany(docs)
+	if err != nil {
+		t.Fatalf("Failed to insert document: %v", err)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("Unexpected number of inserted documents: %d", len(ids))
 	}
 
 	result, err := coll.FindOne(func(doc TestDocument) bool {
@@ -289,11 +291,12 @@ func TestDeleteIter(t *testing.T) {
 		{ID: "14", Name: "Pomegranate"},
 		{ID: "15", Name: "Raspberry"},
 	}
-	for _, doc := range docs {
-		_, err := coll.Insert(doc)
-		if err != nil {
-			t.Fatalf("Failed to insert document: %v", err)
-		}
+	ids, err := coll.InsertMany(docs)
+	if err != nil {
+		t.Fatalf("Failed to insert document: %v", err)
+	}
+	if len(ids) != len(docs) {
+		t.Fatalf("Unexpected number of inserted documents: %d", len(ids))
 	}
 
 	err = coll.DeleteIter(func(doc *TestDocument) bool {
@@ -350,11 +353,12 @@ func TestUpdateIter(t *testing.T) {
 		{ID: "14", Name: "Pomegranate"},
 		{ID: "15", Name: "Raspberry"},
 	}
-	for _, doc := range docs {
-		_, err := coll.Insert(doc)
-		if err != nil {
-			t.Fatalf("Failed to insert document: %v", err)
-		}
+	ids, err := coll.InsertMany(docs)
+	if err != nil {
+		t.Fatalf("Failed to insert document: %v", err)
+	}
+	if len(ids) != len(docs) {
+		t.Fatalf("Unexpected number of inserted documents: %d", len(ids))
 	}
 
 	err = coll.UpdateIter(func(doc *TestDocument) *TestDocument {
@@ -408,11 +412,12 @@ func TestQueryFunctionality(t *testing.T) {
 		{ID: "2", Name: "Banana"},
 		{ID: "3", Name: "Cherry"},
 	}
-	for _, doc := range docs {
-		_, err := coll.Insert(doc)
-		if err != nil {
-			t.Fatalf("Failed to insert document: %v", err)
-		}
+	ids, err := coll.InsertMany(docs)
+	if err != nil {
+		t.Fatalf("Failed to insert document: %v", err)
+	}
+	if len(ids) != len(docs) {
+		t.Fatalf("Unexpected number of inserted documents: %d", len(ids))
 	}
 
 	// Query by filter
