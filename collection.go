@@ -7,6 +7,12 @@ import (
 	"reflect"
 )
 
+type KeyMap map[string]any
+
+func (KeyMap) Key() []byte {
+	return nil
+}
+
 // DocumentSpec represents a document that can be stored in a collection.
 type DocumentSpec interface {
 	Key() []byte
