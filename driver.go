@@ -137,6 +137,18 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 	if typ == nil {
 		panic(fmt.Errorf("cannot use interface as type"))
 	}
+	if driver.Closed {
+		panic(fmt.Errorf("driver is closed"))
+	}
+
+	if name == METADATA_COLLECTION_NAME {
+		return &Collection[T]{
+			Driver:    driver,
+			Name:      name,
+			nameBytes: []byte(name),
+		}
+	}
+
 	// We should only write the fields to the metadata if the type is a struct
 	if typ.Kind() == reflect.Struct {
 		var typeFields []string
@@ -154,16 +166,6 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 		}
 	}
 
-	if driver.Closed {
-		panic(fmt.Errorf("driver is closed"))
-	}
-	if name == METADATA_COLLECTION_NAME {
-		return &Collection[T]{
-			Driver:    driver,
-			Name:      name,
-			nameBytes: []byte(name),
-		}
-	}
 	err := driver.addCollection(name)
 	if err != nil {
 		panic(fmt.Sprintf("unable to add collection to metadata: %v", err))
