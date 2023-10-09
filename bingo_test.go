@@ -1,6 +1,7 @@
 package bingo_test
 
 import (
+	"fmt"
 	"github.com/nokusukun/bingo"
 	"os"
 	"strings"
@@ -8,8 +9,8 @@ import (
 )
 
 type TestDocument struct {
-	ID   string `validate:"required"`
-	Name string `validate:"required"`
+	ID   string `json:"id" validate:"required"`
+	Name string `json:"name" validate:"required"`
 }
 
 func (td TestDocument) Key() []byte {
@@ -107,6 +108,18 @@ func TestCRUD(t *testing.T) {
 			t.Fatalf("Unexpected document data: %v", foundDoc)
 		}
 	})
+
+	t.Run("Test metadata for fields", func(t *testing.T) {
+		fields, err := driver.FieldsOf("testCollection")
+		if err != nil {
+			t.Fatalf("Failed to read metadata: %v", err)
+		}
+		if fields == nil {
+			t.Fatalf("Expected fields to be returned")
+		}
+		fmt.Println("fields", fields)
+	})
+
 }
 
 func TestFindAll(t *testing.T) {

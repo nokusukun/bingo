@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"go.etcd.io/bbolt"
-	"reflect"
 )
 
 type KeyMap map[string]any
@@ -65,30 +64,6 @@ func (c *Collection[T]) BeforeInsert(f func(doc *T) error) *Collection[T] {
 func (c *Collection[T]) AfterInsert(f func(doc *T) error) *Collection[T] {
 	c.afterInsert = f
 	return c
-}
-
-// CollectionFrom creates a new collection with the specified driver and name.
-func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] {
-	var o T
-	typ := reflect.TypeOf(o)
-	if typ == nil {
-		panic(fmt.Errorf("cannot use interface as type"))
-	}
-	if driver.Closed {
-		panic(fmt.Errorf("driver is closed"))
-	}
-	if name != "__metadata" {
-		err := driver.addCollection(name)
-		if err != nil {
-			panic(fmt.Sprintf("unable to add collection to metadata: %v", err))
-		}
-	}
-
-	return &Collection[T]{
-		Driver:    driver,
-		Name:      name,
-		nameBytes: []byte(name),
-	}
 }
 
 type InsertOptions struct {

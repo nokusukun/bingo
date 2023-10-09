@@ -6,7 +6,14 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"go.etcd.io/bbolt"
 	"os"
+	"reflect"
 	"strings"
+)
+
+const (
+	METADATA_COLLECTION_NAME = "__metadata"
+	FIELDS_COLLECTION_NAME   = "__fields:"
+	FIELD_ALIAS_SEPARATOR    = ";"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -89,6 +96,25 @@ func (d *Driver) Close() error {
 	return d.db.Close()
 }
 
+func (d *Driver) FieldsOf(name string) ([][]string, error) {
+	r, err := d.ReadMetadata(FIELDS_COLLECTION_NAME + name)
+	if err != nil {
+		return nil, err
+	}
+	if v, ok := r.([]any); ok {
+		result := [][]string{}
+		for _, i := range v {
+			if s, ok := i.(string); ok {
+				result = append(result, strings.Split(s, FIELD_ALIAS_SEPARATOR))
+			} else {
+				return nil, fmt.Errorf("unknown inner field structure: %v", i)
+			}
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("unknown field structure: %v", r)
+}
+
 // Drop drops the collection from the database.
 // If the environment variable BINGO_ALLOW_DROP_<COLLECTION_NAME> is not set to true, an error is returned.
 // If Driver.config.DeleteNoVerify is set to true, the collection is dropped without any verification.
@@ -102,6 +128,48 @@ func (c *Collection[DocumentType]) Drop() error {
 	return c.Driver.db.Update(func(tx *bbolt.Tx) error {
 		return tx.DeleteBucket([]byte(c.Name))
 	})
+}
+
+// CollectionFrom creates a new collection with the specified driver and name.
+func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] {
+	var o T
+	typ := reflect.TypeOf(o)
+	if typ == nil {
+		panic(fmt.Errorf("cannot use interface as type"))
+	}
+	var typeFields []string
+	for i := 0; i < typ.NumField(); i++ {
+		var names []string
+		names = append(names, typ.Field(i).Name)
+		if jtag := typ.Field(i).Tag.Get("json"); jtag != "" {
+			names = append(names, strings.Split(jtag, ",")[0])
+		}
+		typeFields = append(typeFields, strings.Join(names, FIELD_ALIAS_SEPARATOR))
+	}
+	if driver.Closed {
+		panic(fmt.Errorf("driver is closed"))
+	}
+	if name == METADATA_COLLECTION_NAME {
+		return &Collection[T]{
+			Driver:    driver,
+			Name:      name,
+			nameBytes: []byte(name),
+		}
+	}
+	err := driver.addCollection(name)
+	if err != nil {
+		panic(fmt.Sprintf("unable to add collection to metadata: %v", err))
+	}
+	err = driver.WriteMetadata(FIELDS_COLLECTION_NAME+name, typeFields)
+	if err != nil {
+		panic(fmt.Sprintf("unable to write fields to metadata: %v", err))
+	}
+
+	return &Collection[T]{
+		Driver:    driver,
+		Name:      name,
+		nameBytes: []byte(name),
+	}
 }
 
 type Metadata struct {
