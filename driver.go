@@ -137,15 +137,23 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 	if typ == nil {
 		panic(fmt.Errorf("cannot use interface as type"))
 	}
-	var typeFields []string
-	for i := 0; i < typ.NumField(); i++ {
-		var names []string
-		names = append(names, typ.Field(i).Name)
-		if jtag := typ.Field(i).Tag.Get("json"); jtag != "" {
-			names = append(names, strings.Split(jtag, ",")[0])
+	// We should only write the fields to the metadata if the type is a struct
+	if typ.Kind() == reflect.Struct {
+		var typeFields []string
+		for i := 0; i < typ.NumField(); i++ {
+			var names []string
+			names = append(names, typ.Field(i).Name)
+			if jtag := typ.Field(i).Tag.Get("json"); jtag != "" {
+				names = append(names, strings.Split(jtag, ",")[0])
+			}
+			typeFields = append(typeFields, strings.Join(names, FIELD_ALIAS_SEPARATOR))
 		}
-		typeFields = append(typeFields, strings.Join(names, FIELD_ALIAS_SEPARATOR))
+		err := driver.WriteMetadata(FIELDS_COLLECTION_NAME+name, typeFields)
+		if err != nil {
+			panic(fmt.Sprintf("unable to write fields to metadata: %v", err))
+		}
 	}
+
 	if driver.Closed {
 		panic(fmt.Errorf("driver is closed"))
 	}
@@ -159,10 +167,6 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 	err := driver.addCollection(name)
 	if err != nil {
 		panic(fmt.Sprintf("unable to add collection to metadata: %v", err))
-	}
-	err = driver.WriteMetadata(FIELDS_COLLECTION_NAME+name, typeFields)
-	if err != nil {
-		panic(fmt.Sprintf("unable to write fields to metadata: %v", err))
 	}
 
 	return &Collection[T]{
