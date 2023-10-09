@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go.etcd.io/bbolt"
+	"reflect"
 )
 
 // DocumentSpec represents a document that can be stored in a collection.
@@ -62,6 +63,11 @@ func (c *Collection[T]) AfterInsert(f func(doc *T) error) *Collection[T] {
 
 // CollectionFrom creates a new collection with the specified driver and name.
 func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] {
+	var o T
+	typ := reflect.TypeOf(o)
+	if typ == nil {
+		panic(fmt.Errorf("cannot use interface as type"))
+	}
 	if driver.Closed {
 		panic(fmt.Errorf("driver is closed"))
 	}
