@@ -1,6 +1,6 @@
 # Bingo: A Generics First Database Wrapper
 
-Bingo is a Golang library that provides a convenient wrapper for the `bbolt` database. 
+Bingo is a Golang embedded database library that uses `bbolt` as a backend. 
 
 Through the use of generics, it includes capabilities for CRUD operations, validation, preprocessing, and more.
 
