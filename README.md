@@ -195,72 +195,6 @@ if !result.Any() {
 }
 ```
 
-### Example
-
-The given example demonstrates the creation of a user collection, inserting a user, querying for the user, and checking if the password matches.
-
-## More on Querying
-
-### Setting Up
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	"github.com/nokusukun/bingodb"
-)
-
-
-type User struct {
-	Username string `json:"username,omitempty" validate:"required,min=3,max=64"`
-	Email    string `json:"email,omitempty" validate:"required,email"`
-	Password string `json:"password,omitempty" preprocessor:"password-prep" validate:"required,min=6,max=64"`
-	Active   bool   `json:"active,omitempty"`
-}
-
-func (u User) Key() []byte {
-	return []byte(u.Username)
-}
-
-func (u *User) CheckPassword(password string) bool {
-	current := u.Password
-	if strings.HasPrefix(current, "hash:") {
-		current = strings.TrimPrefix(current, "hash:")
-		return bcrypt.CompareHashAndPassword([]byte(current), []byte(password)) == nil
-	}
-	return current == password
-}
-
-func (u *User) EnsureHashedPassword() error {
-	if strings.HasPrefix("hash:", u.Password) {
-		return nil
-	}
-	hashed, err := HashPassword(u.Password)
-	if err != nil {
-		return err
-	}
-	u.Password = fmt.Sprintf("hash:%s", hashed)
-	return nil
-}
-
-func main() {
-	config := bingo.DriverConfiguration{
-		DeleteNoVerify: true,
-		Filename:       "test.db",
-	}
-	driver, err := bingo.NewDriver(config)
-	if err != nil {
-		log.Fatalf("Failed to create new driver: %v", err)
-	}
-
-	userCollection := bingo.CollectionFrom[User](driver, "users")
-
-	//... your operations ...
-}
-```
 
 
 ### Inserting a Document
@@ -370,6 +304,69 @@ page2 := userCollection.Query(bingo.Query[User]{
     Count: 10, // Get 10 results
     Skip: page1.Next, // Skip n Users, this value is returned by the previous query as QueryResult.Next
 })
+```
+
+## More on Querying
+
+### Setting Up
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/nokusukun/bingodb"
+)
+
+
+type User struct {
+	Username string `json:"username,omitempty" validate:"required,min=3,max=64"`
+	Email    string `json:"email,omitempty" validate:"required,email"`
+	Password string `json:"password,omitempty" preprocessor:"password-prep" validate:"required,min=6,max=64"`
+	Active   bool   `json:"active,omitempty"`
+}
+
+func (u User) Key() []byte {
+	return []byte(u.Username)
+}
+
+func (u *User) CheckPassword(password string) bool {
+	current := u.Password
+	if strings.HasPrefix(current, "hash:") {
+		current = strings.TrimPrefix(current, "hash:")
+		return bcrypt.CompareHashAndPassword([]byte(current), []byte(password)) == nil
+	}
+	return current == password
+}
+
+func (u *User) EnsureHashedPassword() error {
+	if strings.HasPrefix("hash:", u.Password) {
+		return nil
+	}
+	hashed, err := HashPassword(u.Password)
+	if err != nil {
+		return err
+	}
+	u.Password = fmt.Sprintf("hash:%s", hashed)
+	return nil
+}
+
+func main() {
+	config := bingo.DriverConfiguration{
+		DeleteNoVerify: true,
+		Filename:       "test.db",
+	}
+	driver, err := bingo.NewDriver(config)
+	if err != nil {
+		log.Fatalf("Failed to create new driver: %v", err)
+	}
+
+	userCollection := bingo.CollectionFrom[User](driver, "users")
+
+	//... your operations ...
+}
 ```
 
 ### Validating a Query
