@@ -30,8 +30,9 @@ type QueryResult[T DocumentSpec] struct {
 	// Items is a slice of pointers to the documents that matched the query criteria. These documents are the results of the query.
 	Items []*T
 
-	// Last is the index of the last item retrieved in the query result. It helps track the position in the collection.
-	Last int
+	// Next is the index of the last item retrieved in the query result. It helps track the position in the collection.
+	// It can be used to implement pagination by passing it as the Skip value in a subsequent query.
+	Next int
 
 	// Error is an error object that may contain any errors encountered during the query operation. It represents the overall query result status.
 	Error error
@@ -49,7 +50,7 @@ func (qr *QueryResult[T]) JSONResponse() map[string]any {
 	return map[string]any{
 		"result": qr.Items,
 		"count":  len(qr.Items),
-		"next":   qr.Last,
+		"next":   qr.Next,
 	}
 }
 

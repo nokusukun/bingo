@@ -539,7 +539,7 @@ func (c *Collection[T]) Query(q Query[T]) *QueryResult[T] {
 		if err != nil {
 			result.Error = errors.Join(err, fmt.Errorf("error while querying"))
 		}
-		result.Last = last
+		result.Next = last
 		for _, item := range items {
 			item := item
 			result.Items = append(result.Items, &item)
