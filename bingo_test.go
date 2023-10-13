@@ -89,7 +89,7 @@ func TestCRUD(t *testing.T) {
 			t.Fatalf("Expected ID to be returned due to Upsert")
 		}
 
-		foundDoc, err := coll.FindByBytesId(id)
+		foundDoc, err := coll.FindByBytesKey(id)
 		if err != nil {
 			t.Fatalf("Failed to find document: %v", err)
 		}
@@ -100,7 +100,7 @@ func TestCRUD(t *testing.T) {
 
 	// Find
 	t.Run("should find by ID", func(t *testing.T) {
-		foundDoc, err := coll.FindById("1")
+		foundDoc, err := coll.FindByKey("1")
 		if err != nil {
 			t.Fatalf("Failed to find document: %v", err)
 		}
@@ -480,7 +480,7 @@ func TestErrorScenarios(t *testing.T) {
 	}
 
 	// Find non-existent document
-	_, err = coll.FindById("nonexistent")
+	_, err = coll.FindByKey("nonexistent")
 	if err == nil || !bingo.IsErrDocumentNotFound(err) {
 		t.Fatalf("Expected a document not found error, got: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestMiddlewareFunctionality(t *testing.T) {
 	coll.Insert(doc)
 
 	// Find and check if middleware modified the name
-	foundDoc, err := coll.FindById("1")
+	foundDoc, err := coll.FindByKey("1")
 	if err != nil {
 		t.Fatalf("Failed to find document: %v", err)
 	}
