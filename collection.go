@@ -125,7 +125,7 @@ func (c *Collection[T]) inserts(docs []T, opts ...func(options *InsertOptions)) 
 
 func (c *Collection[T]) insertWithTx(bucket *bbolt.Bucket, doc T, opt *InsertOptions) ([]byte, error) {
 	if !opt.Upsert {
-		_, err := c.FindByBytesId(doc.Key())
+		_, err := c.FindByBytesKey(doc.Key())
 		if err == nil {
 			return nil, ErrDocumentExists
 		}
@@ -254,7 +254,8 @@ func (c *Collection[T]) Update(docs ...T) error {
 	return nil
 }
 
-// FindByBytesId retrieves a document from the collection by its id. If the document is not found, an error is returned.
+// Deprecated: FindByBytesId retrieves a document from the collection by its id. If the document is not found, an error is returned.
+// Use FindByBytesKey instead
 func (c *Collection[T]) FindByBytesId(id []byte) (T, error) {
 	var document T
 	r := c.queryKeys(id)
@@ -265,12 +266,30 @@ func (c *Collection[T]) FindByBytesId(id []byte) (T, error) {
 	return document, nil
 }
 
-// FindByBytesIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+// FindByBytesKey retrieves a document from the collection by its id. If the document is not found, an error is returned.
+func (c *Collection[T]) FindByBytesKey(id []byte) (T, error) {
+	var document T
+	r := c.queryKeys(id)
+	if len(r) == 0 {
+		return document, errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
+	}
+	document = r[0]
+	return document, nil
+}
+
+// Deprecated: FindByBytesIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+// Use FindByBytesKeys instead
 func (c *Collection[T]) FindByBytesIds(ids ...[]byte) []T {
 	return c.queryKeys(ids...)
 }
 
-// FindById retrieves a document from the collection by its id. If the document is not found, an error is returned.
+// FindByBytesKeys retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+func (c *Collection[T]) FindByBytesKeys(ids ...[]byte) []T {
+	return c.queryKeys(ids...)
+}
+
+// Deprecated: FindById retrieves a document from the collection by its id. If the document is not found, an error is returned.
+// Use FindByKey instead
 func (c *Collection[T]) FindById(id string) (T, error) {
 	var document T
 	r := c.queryKeys([]byte(id))
@@ -281,8 +300,29 @@ func (c *Collection[T]) FindById(id string) (T, error) {
 	return document, nil
 }
 
-// FindByIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+// FindByKey retrieves a document from the collection by its id. If the document is not found, an error is returned.
+func (c *Collection[T]) FindByKey(id string) (T, error) {
+	var document T
+	r := c.queryKeys([]byte(id))
+	if len(r) == 0 {
+		return document, errors.Join(ErrDocumentNotFound, fmt.Errorf("document with id %v not found", string(id)))
+	}
+	document = r[0]
+	return document, nil
+}
+
+// Deprecated: FindByIds retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+// Use FindByKeys instead
 func (c *Collection[T]) FindByIds(ids ...string) []T {
+	idsBytes := make([][]byte, len(ids))
+	for i, id := range ids {
+		idsBytes[i] = []byte(id)
+	}
+	return c.queryKeys(idsBytes...)
+}
+
+// FindByKeys retrieves documents from the collection by their ids. If the document is not found, an empty list is returned.
+func (c *Collection[T]) FindByKeys(ids ...string) []T {
 	idsBytes := make([][]byte, len(ids))
 	for i, id := range ids {
 		idsBytes[i] = []byte(id)
