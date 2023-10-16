@@ -1,4 +1,4 @@
-# Bingo: A Generics First Database Wrapper
+# Bingo: A Generics First Database
 
 Bingo is a Golang embedded database library that uses `bbolt` as a backend. 
 
