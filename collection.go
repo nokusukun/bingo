@@ -172,21 +172,26 @@ func (c *Collection[T]) insertWithTx(bucket *bbolt.Bucket, doc T, opt *InsertOpt
 	return idBytes, nil
 }
 
-func (c *Collection[T]) FindOne(filter func(doc T) bool) (T, error) {
+func (c *Collection[T]) FindOneWithKey(filter func(doc T) bool) (T, []byte, error) {
 	var empty T
-	r, _, err := c.queryFind(Query[T]{
+	r, keys, _, err := c.queryFind(Query[T]{
 		Filter: filter,
 	})
 
 	if err != nil {
-		return empty, err
+		return empty, nil, err
 	}
 
 	if len(r) == 0 {
-		return empty, errors.Join(ErrDocumentNotFound, fmt.Errorf("document not found"))
+		return empty, nil, errors.Join(ErrDocumentNotFound, fmt.Errorf("document not found"))
 	}
 
-	return r[0], err
+	return r[0], keys[0], err
+}
+
+func (c *Collection[T]) FindOne(filter func(doc T) bool) (T, error) {
+	r, _, err := c.FindOneWithKey(filter)
+	return r, err
 }
 
 type IterOptsFunc func(opts *iterOpts)
@@ -217,21 +222,27 @@ func Count(count int) IterOptsFunc {
 	}
 }
 
-func (c *Collection[T]) Find(filter func(doc T) bool, opts ...IterOptsFunc) ([]T, error) {
+func (c *Collection[T]) FindWithKeys(filter func(doc T) bool, opts ...IterOptsFunc) ([]T, [][]byte, error) {
 	q := Query[T]{
 		Filter: filter,
 	}
 	applyOpts[T](&q, opts...)
 
-	r, _, err := c.queryFind(q)
+	r, keys, _, err := c.queryFind(q)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(r) == 0 {
-		return nil, errors.Join(ErrDocumentNotFound, fmt.Errorf("document not found"))
+		return nil, nil, errors.Join(ErrDocumentNotFound, fmt.Errorf("document not found"))
 	}
+
+	return r, keys, err
+}
+
+func (c *Collection[T]) Find(filter func(doc T) bool, opts ...IterOptsFunc) ([]T, error) {
+	r, _, err := c.FindWithKeys(filter, opts...)
 
 	return r, err
 }
@@ -510,8 +521,9 @@ func (c *Collection[DocumentType]) queryKeys(keys ...[]byte) []DocumentType {
 	return documents
 }
 
-func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
+func (c *Collection[T]) queryFind(q Query[T]) ([]T, [][]byte, int, error) {
 	var documents []T
+	var keys [][]byte
 	var currentFound = 0
 	var last = 0
 	err := c.Driver.db.View(func(tx *bbolt.Tx) error {
@@ -533,6 +545,7 @@ func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
 			}
 			if q.Filter(document) {
 				documents = append(documents, document)
+				keys = append(keys, k)
 				currentFound += 1
 				if q.Count > 0 && currentFound >= q.Count {
 					return stoperr
@@ -542,9 +555,9 @@ func (c *Collection[T]) queryFind(q Query[T]) ([]T, int, error) {
 		})
 	})
 	if err != nil && !errors.Is(err, stoperr) {
-		return documents, last, err
+		return documents, keys, last, err
 	} else {
-		return documents, last, nil
+		return documents, keys, last, nil
 	}
 }
 
@@ -567,22 +580,24 @@ func (c *Collection[T]) Query(q Query[T]) *QueryResult[T] {
 	}
 	if q.Keys != nil {
 		items := c.queryKeys(q.Keys...)
-		for _, item := range items {
+		for i, item := range items {
 			item := item
 			result.Items = append(result.Items, &item)
+			result.Keys = append(result.Keys, q.Keys[i])
 		}
 		return result
 	}
 
 	if q.Filter != nil {
-		items, last, err := c.queryFind(q)
+		items, keys, last, err := c.queryFind(q)
 		if err != nil {
 			result.Error = errors.Join(err, fmt.Errorf("error while querying"))
 		}
 		result.Next = last
-		for _, item := range items {
+		for i, item := range items {
 			item := item
 			result.Items = append(result.Items, &item)
+			result.Keys = append(result.Keys, keys[i])
 		}
 		return result
 	}

@@ -30,6 +30,8 @@ type QueryResult[T DocumentSpec] struct {
 	// Items is a slice of pointers to the documents that matched the query criteria. These documents are the results of the query.
 	Items []*T
 
+	// Keys corresponds to the keys of the documents that matched the query criteria. These documents are the results of the query.
+	Keys [][]byte
 	// Next is the index of the last item retrieved in the query result. It helps track the position in the collection.
 	// It can be used to implement pagination by passing it as the Skip value in a subsequent query.
 	Next int
