@@ -96,6 +96,18 @@ func (d *Driver) Close() error {
 	return d.db.Close()
 }
 
+// Update updates the database using the provided function.
+// This provides low level access to the underlying database.
+func (d *Driver) Update(update func(tx *bbolt.Tx) error) error {
+	return d.db.Update(update)
+}
+
+// View updates the database using the provided function.
+// This provides low level access to the underlying database.
+func (d *Driver) View(update func(tx *bbolt.Tx) error) error {
+	return d.db.View(update)
+}
+
 func (d *Driver) FieldsOf(name string) ([][]string, error) {
 	r, err := d.ReadMetadata(FIELDS_COLLECTION_NAME + name)
 	if err != nil {

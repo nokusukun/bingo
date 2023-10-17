@@ -59,6 +59,12 @@ func TestCRUD(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to insert document: %v", err)
 		}
+
+		doc = TestDocument{ID: "2", Name: "Fest"}
+		_, err = coll.Insert(doc)
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
+		}
 	})
 
 	// should not insert the same document twice
@@ -67,6 +73,24 @@ func TestCRUD(t *testing.T) {
 		_, err = coll.Insert(doc)
 		if err == nil {
 			t.Fatalf("Expected insertion failure due to duplicate key")
+		}
+	})
+
+	t.Run("should return correct key when using FindOneWithKey", func(t *testing.T) {
+		foundDoc, id, err := coll.FindOneWithKey(func(doc TestDocument) bool {
+			return doc.ID == "1"
+		})
+		if err != nil {
+			t.Fatalf("Failed to find document: %v", err)
+		}
+		if foundDoc.Name != "Test" {
+			t.Fatalf("Unexpected document data: %v", foundDoc)
+		}
+		if id == nil {
+			t.Fatalf("Expected ID to be returned")
+		}
+		if string(id) != "1" {
+			t.Fatalf("Unexpected ID returned: %v", id)
 		}
 	})
 
