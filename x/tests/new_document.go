@@ -1,71 +1,100 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/nokusukun/bingo"
-	"reflect"
-	"slices"
+	"os"
 	"strings"
 )
 
-type User struct {
+type Platform string
+
+const (
+	Excel  = "excel"
+	Sheets = "sheets"
+)
+
+type Function struct {
 	bingo.Document
-	Name     string `json:"name" bingo:"index"`
-	Password string `json:"password"`
-}
-
-func getVariantStructValue(v reflect.Value, t reflect.Type) reflect.Value {
-	sf := make([]reflect.StructField, 0)
-	for i := 0; i < t.NumField(); i++ {
-		sf = append(sf, t.Field(i))
-
-		if t.Field(i).Tag.Get("json") != "" {
-			sf[i].Tag = ``
-		}
-	}
-	newType := reflect.StructOf(sf)
-	return v.Convert(newType)
-}
-
-func MarshalIgnoreTags(obj interface{}) ([]byte, error) {
-	value := reflect.ValueOf(obj)
-	t := value.Type()
-	newValue := getVariantStructValue(value, t)
-	return json.Marshal(newValue.Interface())
-}
-
-func GetIndexesFromStruct(v interface{}) map[string]any {
-	indexes := map[string]any{}
-	t := reflect.TypeOf(v)
-	val := reflect.ValueOf(v)
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if tag := field.Tag.Get("bingo"); tag == "" {
-			continue
-		}
-		properties := strings.Split(field.Tag.Get("bingo"), ",")
-		if slices.Contains(properties, "index") {
-			if val.Field(i).IsValid() {
-				indexes[field.Name] = val.Field(i).Interface()
-			}
-		}
-	}
-	return indexes
+	Name        string   `json:"name,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	Example     string   `json:"example,omitempty"`
+	Description string   `json:"description,omitempty"`
+	URL         string   `json:"URL,omitempty"`
+	Platform    Platform `json:"platform,omitempty"`
 }
 
 func main() {
-	//z := User{
-	//	Document: bingo.Document{
-	//		ID: "1",
-	//	},
-	//	Name:     "Nokusukun",
-	//	Password: "dskwqweq",
-	//}
-	////v, _ := MarshalIgnoreTags(z)
-	//
-	x := &User{}
-	json.Unmarshal([]byte("{\"_id\":\"1\",\"Name\":\"Nokusukun\",\"Password\":\"dskwqweq\"}"), x)
-	fmt.Printf("%+v", x)
-	//fmt.Println(GetIndexesFromStruct(z))
+	driver, err := bingo.NewDriver(bingo.DriverConfiguration{
+		Filename: "clippy.db",
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		os.Remove("clippy.db")
+	}()
+
+	functionDB := bingo.CollectionFrom[Function](driver, "functions")
+
+	// Registering a custom ID generator,
+	// this will be called when a new document is inserted
+	// and the if the document does not have a key/id set.
+	functionDB.OnNewId = func(_ int, doc *Function) []byte {
+		return []byte(strings.ToLower(doc.Name))
+	}
+
+	// Inserting
+	key, err := functionDB.Insert(Function{
+		Name:        "SUM",
+		Category:    "Math",
+		Args:        []string{"a", "b"},
+		Example:     "SUM(1, 2)",
+		Description: "Adds two numbers together",
+		URL:         "https://support.google.com/docs/answer/3093669?hl=en",
+		Platform:    Sheets,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Inserted document with key", string(key))
+
+	searchQuery := "sum"
+	platform := "sheets"
+	// Querying
+	query := functionDB.Query(bingo.Query[Function]{
+		Filter: func(doc Function) bool {
+			return doc.Platform == Platform(platform) && strings.Contains(strings.ToLower(doc.Name), strings.ToLower(searchQuery))
+		},
+		Count: 3,
+	})
+	if query.Error != nil {
+		panic(query.Error)
+	}
+
+	if !query.Any() {
+		panic("No documents found!")
+	}
+
+	fmt.Println("Found", query.Count(), "documents")
+	for _, function := range query.Items {
+		fmt.Printf("%s: %s\n", function.Name, function.Description)
+	}
+
+	sum, err := functionDB.FindByKey("sum")
+	if err != nil {
+		panic(err)
+	}
+	sum.Category = "Algebra"
+	err = functionDB.UpdateOne(sum)
+	if err != nil {
+		panic(err)
+	}
+
+	newSum, _ := functionDB.FindByBytesKey(sum.Key())
+	fmt.Println("Updated SUM category to", newSum.Category)
+	fmt.Println(newSum)
 }

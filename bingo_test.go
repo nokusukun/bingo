@@ -83,7 +83,10 @@ func TestCRUD(t *testing.T) {
 
 	// should not insert the same document twice
 	t.Run("should not insert the same document twice", func(t *testing.T) {
-		doc := TestDocument{Document: bingo.Document{ID: "1"}, Name: "Test"}
+		doc := TestDocument{
+			Document: bingo.Document{ID: "1"},
+			Name:     "Test",
+		}
 		_, err = coll.Insert(doc)
 		if err == nil {
 			t.Fatalf("Expected insertion failure due to duplicate key")
@@ -486,7 +489,7 @@ func TestQueryFunctionality(t *testing.T) {
 	}
 
 	// Query by keys
-	keyQuery := bingo.Query[TestDocument]{Keys: [][]byte{[]byte("1"), []byte("3")}}
+	keyQuery := bingo.Query[TestDocument]{Keys: ids[:2]}
 	kResult := coll.Query(keyQuery)
 	if kResult.Count() != 2 {
 		t.Fatalf("Unexpected count for key-based query: %d", kResult.Count())

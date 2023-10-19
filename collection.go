@@ -30,7 +30,7 @@ type Collection[DocumentType DocumentSpec] struct {
 	afterDelete  func(doc *DocumentType) error
 	beforeInsert func(doc *DocumentType) error
 	afterInsert  func(doc *DocumentType) error
-	keyGenerator func(count int, document *DocumentType) []byte
+	OnNewId      func(count int, document *DocumentType) []byte
 }
 
 // BeforeUpdate registers a function to be called before a document is updated in the collection.
@@ -185,8 +185,8 @@ func (c *Collection[T]) getKey(bucket *bbolt.Bucket, doc *T) []byte {
 	key := (*doc).Key()
 	if len(key) == 0 {
 		idBytes = []byte(node.Generate().Base58())
-		if c.keyGenerator != nil {
-			idBytes = c.keyGenerator(bucket.Stats().KeyN, doc)
+		if c.OnNewId != nil {
+			idBytes = c.OnNewId(bucket.Stats().KeyN, doc)
 		}
 		reflect.ValueOf(doc).Elem().FieldByName("ID").SetString(string(idBytes))
 	} else {
@@ -560,7 +560,6 @@ func (c *Collection[T]) queryFind(q Query[T]) ([]T, [][]byte, int, error) {
 			if last <= q.Skip {
 				return nil
 			}
-
 			var document T
 			err := Unmarshaller.Unmarshal(v, &document)
 			if err != nil {
