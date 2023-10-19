@@ -168,8 +168,6 @@ func (c *Collection[T]) insertWithTx(bucket *bbolt.Bucket, doc T, opt *InsertOpt
 	return idBytes, nil
 }
 
-//var base32encoder = base32.NewEncoding("0123456789abcdefghijklmnopqrstuv").WithPadding(base32.NoPadding)
-
 var node *snowflake.Node
 
 func (c *Collection[T]) getKey(bucket *bbolt.Bucket, doc *T) []byte {

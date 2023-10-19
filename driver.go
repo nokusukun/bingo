@@ -166,7 +166,7 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 		}
 	}
 
-	// We should only write the fields to the metadata if the type is a struct
+	//We should only write the fields to the metadata if the type is a struct
 	if typ.Kind() == reflect.Struct {
 		var typeFields []string
 		for i := 0; i < typ.NumField(); i++ {
@@ -181,6 +181,10 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 		if err != nil {
 			panic(fmt.Sprintf("unable to write fields to metadata: %v", err))
 		}
+	}
+
+	if !reflect.ValueOf(o).FieldByName("ID").IsValid() {
+		panic(fmt.Errorf("document type %v does not have a valid ID field", typ))
 	}
 
 	err := driver.addCollection(name)
