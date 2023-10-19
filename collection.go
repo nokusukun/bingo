@@ -3,7 +3,9 @@ package bingo
 import (
 	"errors"
 	"fmt"
+	"github.com/bwmarrin/snowflake"
 	"go.etcd.io/bbolt"
+	"reflect"
 )
 
 type KeyMap map[string]any
@@ -28,6 +30,7 @@ type Collection[DocumentType DocumentSpec] struct {
 	afterDelete  func(doc *DocumentType) error
 	beforeInsert func(doc *DocumentType) error
 	afterInsert  func(doc *DocumentType) error
+	keyGenerator func(count int, document *DocumentType) []byte
 }
 
 // BeforeUpdate registers a function to be called before a document is updated in the collection.
@@ -142,20 +145,13 @@ func (c *Collection[T]) insertWithTx(bucket *bbolt.Bucket, doc T, opt *InsertOpt
 		}
 	}
 
+	idBytes := c.getKey(bucket, &doc)
+
 	marshal, err := Marshaller.Marshal(doc)
 	if err != nil {
 		return nil, err
 	}
 
-	var idBytes []byte
-
-	key := doc.Key()
-	if len(key) == 0 {
-		uniqueId, _ := bucket.NextSequence()
-		idBytes = []byte(fmt.Sprintf("%v", uniqueId))
-	} else {
-		idBytes = key
-	}
 	err = bucket.Put(idBytes, marshal)
 
 	if err != nil {
@@ -170,6 +166,33 @@ func (c *Collection[T]) insertWithTx(bucket *bbolt.Bucket, doc T, opt *InsertOpt
 	}
 
 	return idBytes, nil
+}
+
+//var base32encoder = base32.NewEncoding("0123456789abcdefghijklmnopqrstuv").WithPadding(base32.NoPadding)
+
+var node *snowflake.Node
+
+func (c *Collection[T]) getKey(bucket *bbolt.Bucket, doc *T) []byte {
+	if node == nil {
+		var err error
+		node, err = snowflake.NewNode(1)
+		if err != nil {
+			panic(fmt.Errorf("unable to create snowflake node: %v", err))
+		}
+	}
+	var idBytes []byte
+
+	key := (*doc).Key()
+	if len(key) == 0 {
+		idBytes = []byte(node.Generate().Base58())
+		if c.keyGenerator != nil {
+			idBytes = c.keyGenerator(bucket.Stats().KeyN, doc)
+		}
+		reflect.ValueOf(doc).Elem().FieldByName("ID").SetString(string(idBytes))
+	} else {
+		idBytes = key
+	}
+	return idBytes
 }
 
 func (c *Collection[T]) FindOneWithKey(filter func(doc T) bool) (T, []byte, error) {

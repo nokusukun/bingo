@@ -38,6 +38,7 @@ const (
 )
 
 type Function struct {
+	bingo.Document
 	Name        string   `json:"name,omitempty"`
 	Category    string   `json:"category,omitempty"`
 	Args        []string `json:"args,omitempty"`
@@ -45,10 +46,6 @@ type Function struct {
 	Description string   `json:"description,omitempty"`
 	URL         string   `json:"URL,omitempty"`
 	Platform    Platform `json:"platform,omitempty"`
-}
-
-func (f Function) Key() []byte {
-	return []byte(fmt.Sprintf("%s-%s", f.Name, f.Platform))
 }
 
 func main() {
@@ -120,13 +117,10 @@ You can specify an autoincrement ID by returning nil in the `Key` method.
 
 ```go
 type User struct {
+	bingo.Document
 	Username string `json:"username,omitempty" validate:"required,min=3,max=64"`
 	Email    string `json:"email,omitempty" validate:"required,email"`
 	Password string `json:"password,omitempty" preprocessor:"password-prep" validate:"required,min=6,max=64"`
-}
-
-func (u User) Key() []byte {
-	return []byte(u.Username)
 }
 
 func (u *User) CheckPassword(password string) bool {
@@ -152,6 +146,7 @@ func (u *User) EnsureHashedPassword() error {
 ```
 
 ### 3. Create a collection for your document type
+Note: Your document type must have bingo.Document as it's first field or implement the `bingo.DocumentSpec` interface.
 
 ```go
 users := bingo.CollectionFrom[User](driver, "users")
@@ -181,6 +176,25 @@ if err != nil {
 
 fmt.Println("Inserted user with ID:", id)
 ```
+
+**Inserting documents with a custom ID:**
+
+```go
+id, err := users.Insert(User{
+	Document: bingo.Document{
+        ID: []byte("custom-id"),
+    },
+	Username: "test",
+	Password: "test123",
+	Email:    "random@rrege.com",
+})
+if err != nil {
+	panic(err)
+}
+
+fmt.Println("Inserted user with ID:", id)
+```
+
 
 **Querying documents:**
 

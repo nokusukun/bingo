@@ -3,19 +3,20 @@ package bingo_test
 import (
 	"fmt"
 	"github.com/nokusukun/bingo"
+	"go.etcd.io/bbolt"
 	"os"
 	"strings"
 	"testing"
 )
 
 type TestDocument struct {
-	ID   string `json:"id" validate:"required"`
+	bingo.Document
 	Name string `json:"name" validate:"required"`
 }
 
-func (td TestDocument) Key() []byte {
-	return []byte(td.ID)
-}
+//func (td TestDocument) Key() []byte {
+//	return []byte(td.ID)
+//}
 
 // Initialize the driver
 func TestNewDriver(t *testing.T) {
@@ -54,22 +55,35 @@ func TestCRUD(t *testing.T) {
 	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
 	t.Run("should insert", func(t *testing.T) {
 		// Insert
-		doc := TestDocument{ID: "1", Name: "Test"}
-		_, err = coll.Insert(doc)
+		_, err = coll.Insert(TestDocument{Document: bingo.Document{ID: "1"}, Name: "Test"})
 		if err != nil {
 			t.Fatalf("Failed to insert document: %v", err)
 		}
 
-		doc = TestDocument{ID: "2", Name: "Fest"}
-		_, err = coll.Insert(doc)
+		_, err = coll.Insert(TestDocument{Name: "Fest"})
 		if err != nil {
 			t.Fatalf("Failed to insert document: %v", err)
 		}
+
+		generatedId, err := coll.Insert(TestDocument{Name: "Rest"})
+		if err != nil {
+			t.Fatalf("Failed to insert document: %v", err)
+		}
+		fmt.Println("Generated Id", string(generatedId))
+		coll.Driver.View(func(tx *bbolt.Tx) error {
+			return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
+				fmt.Println("Bucket", string(name))
+				return b.ForEach(func(k, v []byte) error {
+					fmt.Println("Key", string(k), "Value", string(v))
+					return nil
+				})
+			})
+		})
 	})
 
 	// should not insert the same document twice
 	t.Run("should not insert the same document twice", func(t *testing.T) {
-		doc := TestDocument{ID: "1", Name: "Test"}
+		doc := TestDocument{Document: bingo.Document{ID: "1"}, Name: "Test"}
 		_, err = coll.Insert(doc)
 		if err == nil {
 			t.Fatalf("Expected insertion failure due to duplicate key")
@@ -96,7 +110,7 @@ func TestCRUD(t *testing.T) {
 
 	// should not insert but not throw an error because IgnoreErrors is passed
 	t.Run("should not insert but not throw an error because IgnoreErrors is passed", func(t *testing.T) {
-		doc := TestDocument{ID: "1", Name: "Test"}
+		doc := TestDocument{Document: bingo.Document{ID: "1"}, Name: "Test"}
 		id, err := coll.Insert(doc, bingo.IgnoreErrors)
 		if err != nil && id != nil {
 			t.Fatalf("Expected insertion to succeed due to IgnoreErrors")
@@ -104,7 +118,7 @@ func TestCRUD(t *testing.T) {
 	})
 
 	t.Run("should upsert data", func(t *testing.T) {
-		doc := TestDocument{ID: "1", Name: "Fooby"}
+		doc := TestDocument{Document: bingo.Document{ID: "1"}, Name: "Fooby"}
 		id, err := coll.Insert(doc, bingo.Upsert)
 		if err != nil {
 			t.Fatalf("Expected insertion to succeed due to Upsert")
@@ -165,9 +179,9 @@ func TestFindAll(t *testing.T) {
 	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
 
 	docs := []TestDocument{
-		{ID: "1", Name: "Apple"},
-		{ID: "2", Name: "Banana"},
-		{ID: "3", Name: "Cherry"},
+		{Name: "Apple"},
+		{Name: "Banana"},
+		{Name: "Cherry"},
 	}
 	for _, doc := range docs {
 		_, err = coll.Insert(doc)
@@ -204,9 +218,9 @@ func TestUpdateOne(t *testing.T) {
 	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
 
 	docs := []TestDocument{
-		{ID: "1", Name: "Apple"},
-		{ID: "2", Name: "Banana"},
-		{ID: "3", Name: "Cherry"},
+		{Name: "Apple"},
+		{Name: "Banana"},
+		{Name: "Cherry"},
 	}
 	ids, err := coll.InsertMany(docs)
 	if err != nil {
@@ -260,9 +274,9 @@ func TestDeleteOne(t *testing.T) {
 	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
 
 	docs := []TestDocument{
-		{ID: "1", Name: "Apple"},
-		{ID: "2", Name: "Banana"},
-		{ID: "3", Name: "Cherry"},
+		{Name: "Apple"},
+		{Name: "Banana"},
+		{Name: "Cherry"},
 	}
 	ids, err := coll.InsertMany(docs)
 	if err != nil {
@@ -312,21 +326,21 @@ func TestDeleteIter(t *testing.T) {
 	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
 
 	docs := []TestDocument{
-		{ID: "1", Name: "Apple"},
-		{ID: "2", Name: "Banana"},
-		{ID: "3", Name: "Cherry"},
-		{ID: "4", Name: "Pineapple"},
-		{ID: "5", Name: "Strawberry"},
-		{ID: "6", Name: "Watermelon"},
-		{ID: "7", Name: "Orange"},
-		{ID: "8", Name: "Grape"},
-		{ID: "9", Name: "Kiwi"},
-		{ID: "10", Name: "Mango"},
-		{ID: "11", Name: "Peach"},
-		{ID: "12", Name: "Pear"},
-		{ID: "13", Name: "Plum"},
-		{ID: "14", Name: "Pomegranate"},
-		{ID: "15", Name: "Raspberry"},
+		{Name: "Apple"},
+		{Name: "Banana"},
+		{Name: "Cherry"},
+		{Name: "Pineapple"},
+		{Name: "Strawberry"},
+		{Name: "Watermelon"},
+		{Name: "Orange"},
+		{Name: "Grape"},
+		{Name: "Kiwi"},
+		{Name: "Mango"},
+		{Name: "Peach"},
+		{Name: "Pear"},
+		{Name: "Plum"},
+		{Name: "Pomegranate"},
+		{Name: "Raspberry"},
 	}
 	ids, err := coll.InsertMany(docs)
 	if err != nil {
@@ -374,21 +388,21 @@ func TestUpdateIter(t *testing.T) {
 	coll := bingo.CollectionFrom[TestDocument](driver, "testCollection")
 
 	docs := []TestDocument{
-		{ID: "1", Name: "Apple"},
-		{ID: "2", Name: "Banana"},
-		{ID: "3", Name: "Cherry"},
-		{ID: "4", Name: "Pineapple"},
-		{ID: "5", Name: "Strawberry"},
-		{ID: "6", Name: "Watermelon"},
-		{ID: "7", Name: "Orange"},
-		{ID: "8", Name: "Grape"},
-		{ID: "9", Name: "Kiwi"},
-		{ID: "10", Name: "Mango"},
-		{ID: "11", Name: "Peach"},
-		{ID: "12", Name: "Pear"},
-		{ID: "13", Name: "Plum"},
-		{ID: "14", Name: "Pomegranate"},
-		{ID: "15", Name: "Raspberry"},
+		{Name: "Apple"},
+		{Name: "Banana"},
+		{Name: "Cherry"},
+		{Name: "Pineapple"},
+		{Name: "Strawberry"},
+		{Name: "Watermelon"},
+		{Name: "Orange"},
+		{Name: "Grape"},
+		{Name: "Kiwi"},
+		{Name: "Mango"},
+		{Name: "Peach"},
+		{Name: "Pear"},
+		{Name: "Plum"},
+		{Name: "Pomegranate"},
+		{Name: "Raspberry"},
 	}
 	ids, err := coll.InsertMany(docs)
 	if err != nil {
@@ -445,9 +459,9 @@ func TestQueryFunctionality(t *testing.T) {
 
 	// Insert multiple docs
 	docs := []TestDocument{
-		{ID: "1", Name: "Apple"},
-		{ID: "2", Name: "Banana"},
-		{ID: "3", Name: "Cherry"},
+		{Name: "Apple"},
+		{Name: "Banana"},
+		{Name: "Cherry"},
 	}
 	ids, err := coll.InsertMany(docs)
 	if err != nil {
@@ -496,13 +510,6 @@ func TestErrorScenarios(t *testing.T) {
 
 	coll := bingo.CollectionFrom[TestDocument](driver, "testErrorCollection")
 
-	// Insert doc with missing ID (should fail validation)
-	doc := TestDocument{Name: "Invalid"}
-	_, err = coll.Insert(doc)
-	if err == nil {
-		t.Fatal("Expected insertion failure due to validation error")
-	}
-
 	// Find non-existent document
 	_, err = coll.FindByKey("nonexistent")
 	if err == nil || !bingo.IsErrDocumentNotFound(err) {
@@ -534,7 +541,7 @@ func TestMiddlewareFunctionality(t *testing.T) {
 	})
 
 	// Insert
-	doc := TestDocument{ID: "1", Name: "Original"}
+	doc := TestDocument{Document: bingo.Document{ID: "1"}, Name: "Original"}
 	coll.Insert(doc)
 
 	// Find and check if middleware modified the name

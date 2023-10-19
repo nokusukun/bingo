@@ -16,7 +16,12 @@ const (
 	FIELD_ALIAS_SEPARATOR    = ";"
 )
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var json = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	TagKey:                 "bingo_json",
+}.Froze()
 
 type HasMarshal interface {
 	Marshal(v interface{}) ([]byte, error)
@@ -191,6 +196,7 @@ func CollectionFrom[T DocumentSpec](driver *Driver, name string) *Collection[T] 
 }
 
 type Metadata struct {
+	Document
 	K string
 	V any
 }
