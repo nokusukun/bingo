@@ -12,6 +12,17 @@ Through the use of generics, it includes capabilities for CRUD operations, valid
 - **Hooks**: Execute functions before and after certain operations (Insert, Update, Delete).
   package main
 
+
+## Installation
+
+Install the library using `go get`:
+
+```bash
+go get -u github.com/nokusukun/bingo
+```
+
+## Full Example
+
 ```go
 package main
 
@@ -115,92 +126,6 @@ func main() {
 }
 
 ```
-
-## Installation
-
-Install the library using `go get`:
-
-```bash
-go get -u github.com/nokusukun/bingo
-```
-
-## Full Example
-
-```go
-package main
-
-import (
-	"fmt"
-	"github.com/nokusukun/bingo"
-	"strings"
-)
-
-type Platform string
-
-const (
-	Excel  = "excel"
-	Sheets = "sheets"
-)
-
-type Function struct {
-	bingo.Document
-	Name        string   `json:"name,omitempty"`
-	Category    string   `json:"category,omitempty"`
-	Args        []string `json:"args,omitempty"`
-	Example     string   `json:"example,omitempty"`
-	Description string   `json:"description,omitempty"`
-	URL         string   `json:"URL,omitempty"`
-	Platform    Platform `json:"platform,omitempty"`
-}
-
-func main() {
-	driver, err := bingo.NewDriver(bingo.DriverConfig{
-		Database: "clippy.db",
-	}
-	if err != nil {
-		panic(err)
-	}
-
-	functionDB := bingo.CollectionFrom[Function](driver, "functions")
-
-	// Inserting
-	id, err := functionDB.Insert(Function{
-		Name:        "SUM",
-		Category:    "Math",
-		Args:        []string{"a", "b"},
-		Example:     "SUM(1, 2)",
-		Description: "Adds two numbers together",
-		URL:         "https://support.google.com/docs/answer/3093669?hl=en",
-		Platform:    Sheets,
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	searchQuery := "sum"
-	platform := "sheets"
-	// Querying
-	query := functionDB.Query(bingo.Query[Function]{
-		Filter: func(doc Function) bool {
-			return doc.Platform == Platform(platform) && strings.Contains(strings.ToLower(doc.Name), strings.ToLower(searchQuery))
-		},
-		Count: 3,
-	})
-	if query.Error != nil {
-		panic(query.Error)
-	}
-
-	if !query.Any() {
-		panic("No documents found!")
-	}
-
-	for _, function := range query.Items {
-		fmt.Printf("%s: %s\n", function.Name, function.Description)
-	}
-}
-
-```
-
 
 ## Usage:
 
