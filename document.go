@@ -7,3 +7,8 @@ type Document struct {
 func (d Document) Key() []byte {
 	return []byte(d.ID)
 }
+
+func (d Document) WithId(id string) Document {
+	d.ID = id
+	return d
+}
